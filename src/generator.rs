@@ -430,7 +430,7 @@ fn gen_pattern<RngType: rand::Rng>(
             "false".to_string()
         }),
         PatternKind::Atom => Pattern::Atom("a".to_string()), // TODO
-        PatternKind::Integer => Pattern::Integer(BigInt::from(0i32)), // TODO
+        PatternKind::Integer => Pattern::Integer(choose_random_integer(rng)),
         PatternKind::Float => Pattern::Float(choose_random_double(rng)),
         PatternKind::Underscore => Pattern::Underscore(),
         PatternKind::UsedVariable => match env.pick_used_var_for_pattern(rng, &ctx.expected_type) {
@@ -780,21 +780,7 @@ fn gen_expr<RngType: rand::Rng>(
                 Bitstring => Expr::BitstringConstruction(Vec::new()),
             },
         },
-        ExprKind::Integer => Expr::Integer(
-            [
-                BigInt::from(0i32),
-                BigInt::from(1i32),
-                BigInt::from(-1i32),
-                BigInt::from(i32::MIN),
-                BigInt::from(i32::MAX),
-                BigInt::from(i64::MIN),
-                BigInt::from(i64::MAX),
-                BigInt::from(u64::MAX),
-            ]
-            .into_iter()
-            .choose(rng)
-            .unwrap(),
-        ),
+        ExprKind::Integer => Expr::Integer(choose_random_integer(rng)),
         ExprKind::Float => Expr::Float(choose_random_double(rng)),
         ExprKind::String => {
             let length = rand_distr::Geometric::new(0.1).unwrap().sample(rng);
@@ -1285,6 +1271,22 @@ fn gen_expr<RngType: rand::Rng>(
     };
     *size_to_incr += expr.size(m);
     m.add_expr(expr)
+}
+
+fn choose_random_integer<RngType: rand::Rng>(rng: &mut RngType) -> BigInt {
+    [
+        BigInt::from(0i32),
+        BigInt::from(1i32),
+        BigInt::from(-1i32),
+        BigInt::from(i32::MIN),
+        BigInt::from(i32::MAX),
+        BigInt::from(i64::MIN),
+        BigInt::from(i64::MAX),
+        BigInt::from(u64::MAX),
+    ]
+    .into_iter()
+    .choose(rng)
+    .unwrap()
 }
 
 fn choose_random_double<RngType: rand::Rng>(rng: &mut RngType) -> f64 {
