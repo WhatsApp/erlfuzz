@@ -188,6 +188,15 @@ impl fmt::Display for UnaryOperator {
     }
 }
 
+fn write_float(f: &mut fmt::Formatter<'_>, n: f64) -> Result<(), std::fmt::Error> {
+    // Force a ".0" at the end if the double is actually an integer
+    if n.trunc() != n {
+        write!(f, "{}", n)
+    } else {
+        write!(f, "{:.1}", n)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Expr {
     Var(VarNum),
@@ -266,14 +275,7 @@ impl AstNode for Expr {
             Expr::Nil() => write!(f, "[]"),
             Expr::Atom(a) => write!(f, "{}", a),
             Expr::Integer(n) => write!(f, "{}", n),
-            Expr::Float(n) => {
-                // Force a ".0" at the end if the double is actually an integer
-                if n.trunc() != *n {
-                    write!(f, "{}", n)
-                } else {
-                    write!(f, "{:.1}", n)
-                }
-            }
+            Expr::Float(n) => write_float(f, *n),
             Expr::String(s) => write!(f, "\"{}\"", s),
             Expr::LocalCall(fun_name, args) => {
                 write!(f, "({}(", fun_name)?;
@@ -689,6 +691,7 @@ pub enum Pattern {
     Nil(),
     Atom(Atom),
     Integer(BigInt),
+    Float(f64),
     Underscore(),
     NamedVar(VarNum),
     // p1 = p2
@@ -710,6 +713,7 @@ impl SizedAst for Pattern {
             Pattern::Nil()
             | Pattern::Atom(_)
             | Pattern::Integer(_)
+            | Pattern::Float(_)
             | Pattern::Underscore()
             | Pattern::NamedVar(_) => 1,
         }
@@ -759,6 +763,7 @@ impl AstNode for Pattern {
             Pattern::Nil() => write!(f, "[]"),
             Pattern::Atom(a) => write!(f, "{}", a),
             Pattern::Integer(n) => write!(f, "{}", n),
+            Pattern::Float(n) => write_float(f, *n),
         }
     }
 }

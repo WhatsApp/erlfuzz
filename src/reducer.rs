@@ -225,6 +225,7 @@ fn recurse_pattern<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, pattern
         Pattern::Nil()
         | Pattern::Atom(_)
         | Pattern::Integer(_)
+        | Pattern::Float(_)
         | Pattern::Underscore()
         | Pattern::NamedVar(_) => (),
         Pattern::EqualPatterns(p1_id, p2_id) => {

@@ -318,6 +318,7 @@ enum PatternKind {
     Atom,
     Boolean,
     Integer,
+    Float,
     Underscore,
     UnboundVariable,
     // fully bound variables, but also those that are only bound in a parallel pattern
@@ -334,6 +335,7 @@ const ALL_PATTERN_KINDS: &[PatternKind] = &[
     PatternKind::Atom,
     PatternKind::Boolean,
     PatternKind::Integer,
+    PatternKind::Float,
     PatternKind::Underscore,
     PatternKind::UnboundVariable,
     PatternKind::UsedVariable,
@@ -350,6 +352,7 @@ fn pattern_kind_weight(kind: PatternKind) -> u32 {
         PatternKind::Atom => 1,
         PatternKind::Boolean => 1,
         PatternKind::Integer => 1,
+        PatternKind::Float => 1,
         PatternKind::Underscore => 1,
         PatternKind::UnboundVariable => 3,
         PatternKind::UsedVariable => 2,
@@ -367,6 +370,7 @@ fn is_pattern_kind_allowed_by_context(kind: PatternKind, ctx: Context) -> bool {
         PatternKind::Atom => ctx.allows_type(Atom),
         PatternKind::Boolean => ctx.allows_type(Boolean),
         PatternKind::Integer => ctx.allows_type(Integer),
+        PatternKind::Float => ctx.allows_type(Float),
         PatternKind::Underscore => true,
         PatternKind::UnboundVariable => !ctx.is_in_guard,
         PatternKind::UsedVariable => !ctx.no_bound_vars,
@@ -427,6 +431,7 @@ fn gen_pattern<RngType: rand::Rng>(
         }),
         PatternKind::Atom => Pattern::Atom("a".to_string()), // TODO
         PatternKind::Integer => Pattern::Integer(BigInt::from(0i32)), // TODO
+        PatternKind::Float => Pattern::Float(choose_random_double(rng)),
         PatternKind::Underscore => Pattern::Underscore(),
         PatternKind::UsedVariable => match env.pick_used_var_for_pattern(rng, &ctx.expected_type) {
             Some((v, _t)) => Pattern::NamedVar(v),
@@ -790,35 +795,7 @@ fn gen_expr<RngType: rand::Rng>(
             .choose(rng)
             .unwrap(),
         ),
-        ExprKind::Float => {
-            let largest_precise_double_integer = (53f64).exp2();
-            assert!(
-                (largest_precise_double_integer as u64)
-                    == ((largest_precise_double_integer + 1.0f64) as u64)
-            );
-            assert!(
-                (largest_precise_double_integer as u64)
-                    > ((largest_precise_double_integer - 1.0f64) as u64)
-            );
-            Expr::Float(
-                // We generate none of +Infinity, -Infinity, NaN, because they are banned in Erlang.
-                // See http://erlang.org/pipermail/erlang-questions/2012-February/064728.html
-                [
-                    0.0f64,
-                    -0.0f64,
-                    1.0f64,
-                    -1.0f64,
-                    largest_precise_double_integer,
-                    u32::MAX as f64,
-                    i32::MAX as f64,
-                    f64::MAX,
-                    f64::EPSILON,
-                ]
-                .into_iter()
-                .choose(rng)
-                .unwrap(),
-            )
-        }
+        ExprKind::Float => Expr::Float(choose_random_double(rng)),
         ExprKind::String => {
             let length = rand_distr::Geometric::new(0.1).unwrap().sample(rng);
             // Standard distribution generates all valid unicode code points, which turns out to create strings rejected by the compiler.
@@ -1308,6 +1285,34 @@ fn gen_expr<RngType: rand::Rng>(
     };
     *size_to_incr += expr.size(m);
     m.add_expr(expr)
+}
+
+fn choose_random_double<RngType: rand::Rng>(rng: &mut RngType) -> f64 {
+    let largest_precise_double_integer = (53f64).exp2();
+    assert!(
+        (largest_precise_double_integer as u64)
+            == ((largest_precise_double_integer + 1.0f64) as u64)
+    );
+    assert!(
+        (largest_precise_double_integer as u64)
+            > ((largest_precise_double_integer - 1.0f64) as u64)
+    );
+    // We generate none of +Infinity, -Infinity, NaN, because they are banned in Erlang.
+    // See http://erlang.org/pipermail/erlang-questions/2012-February/064728.html
+    [
+        0.0f64,
+        -0.0f64,
+        1.0f64,
+        -1.0f64,
+        largest_precise_double_integer,
+        u32::MAX as f64,
+        i32::MAX as f64,
+        f64::MAX,
+        f64::EPSILON,
+    ]
+    .into_iter()
+    .choose(rng)
+    .unwrap()
 }
 
 fn gen_cases(
