@@ -537,6 +537,7 @@ enum ExprKind {
     Nil,
     Var,
     Integer,
+    Float,
     String,
     BooleanLiteral,
     AtomFunctionName,
@@ -583,6 +584,7 @@ enum ComprehensionElementKind {
 const ALL_EXPR_KINDS: &[ExprKind] = &[
     ExprKind::Nil,
     ExprKind::Integer,
+    ExprKind::Float,
     ExprKind::String,
     ExprKind::BooleanLiteral,
     ExprKind::AtomFunctionName,
@@ -623,6 +625,7 @@ fn expr_kind_weight(kind: ExprKind) -> u32 {
     match kind {
         ExprKind::Nil => 2,
         ExprKind::Integer => 2,
+        ExprKind::Float => 1,
         ExprKind::String => 2,
         ExprKind::BooleanLiteral => 1,
         ExprKind::AtomFunctionName => 1,
@@ -664,6 +667,7 @@ fn is_expr_kind_allowed_by_context(kind: ExprKind, ctx: Context) -> bool {
     match kind {
         ExprKind::Nil => ctx.allows_type(List),
         ExprKind::Integer => ctx.allows_type(Integer),
+        ExprKind::Float => ctx.allows_type(Float),
         ExprKind::String => ctx.allows_type(List),
         ExprKind::BooleanLiteral => ctx.allows_type(Boolean),
         ExprKind::AtomFunctionName => ctx.allows_type(Atom),
@@ -762,7 +766,7 @@ fn gen_expr<RngType: rand::Rng>(
             // If we can't find a variable of an appropriate type, we use some arbitrary literal
             None => match ctx.expected_type {
                 // TODO: do better for Float, Tuple, Fun, Pid, Reference
-                Any | Integer | Number | Tuple | Bottom | Fun | Pid | Reference | Float => {
+                Any | Integer | Float | Number | Tuple | Bottom | Fun | Pid | Reference => {
                     Expr::Integer(BigInt::from(0i32))
                 }
                 Atom | Boolean => Expr::Atom("true".to_string()),
@@ -782,11 +786,39 @@ fn gen_expr<RngType: rand::Rng>(
                 BigInt::from(i64::MAX),
                 BigInt::from(u64::MAX),
             ]
-            .iter()
+            .into_iter()
             .choose(rng)
-            .unwrap()
-            .clone(),
+            .unwrap(),
         ),
+        ExprKind::Float => {
+            let largest_precise_double_integer = (53f64).exp2();
+            assert!(
+                (largest_precise_double_integer as u64)
+                    == ((largest_precise_double_integer + 1.0f64) as u64)
+            );
+            assert!(
+                (largest_precise_double_integer as u64)
+                    > ((largest_precise_double_integer - 1.0f64) as u64)
+            );
+            Expr::Float(
+                // We generate none of +Infinity, -Infinity, NaN, because they are banned in Erlang.
+                // See http://erlang.org/pipermail/erlang-questions/2012-February/064728.html
+                [
+                    0.0f64,
+                    -0.0f64,
+                    1.0f64,
+                    -1.0f64,
+                    largest_precise_double_integer,
+                    u32::MAX as f64,
+                    i32::MAX as f64,
+                    f64::MAX,
+                    f64::EPSILON,
+                ]
+                .into_iter()
+                .choose(rng)
+                .unwrap(),
+            )
+        }
         ExprKind::String => {
             let length = rand_distr::Geometric::new(0.1).unwrap().sample(rng);
             // Standard distribution generates all valid unicode code points, which turns out to create strings rejected by the compiler.

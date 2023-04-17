@@ -194,6 +194,7 @@ pub enum Expr {
     Nil(),
     Atom(Atom),
     Integer(BigInt),
+    Float(f64),
     String(String),
     LocalCall(String, Vec<ExprId>),
     RemoteCall(String, String, Vec<ExprId>),
@@ -249,7 +250,12 @@ impl SizedAst for Expr {
             }
             Expr::Maybe(exprs, else_section) => 1 + exprs.size(module) + else_section.size(module),
             Expr::Block(b) => 1 + b.size(module),
-            Expr::Var(_) | Expr::Nil() | Expr::Atom(_) | Expr::Integer(_) | Expr::String(_) => 1,
+            Expr::Var(_)
+            | Expr::Nil()
+            | Expr::Atom(_)
+            | Expr::Integer(_)
+            | Expr::Float(_)
+            | Expr::String(_) => 1,
         }
     }
 }
@@ -260,6 +266,14 @@ impl AstNode for Expr {
             Expr::Nil() => write!(f, "[]"),
             Expr::Atom(a) => write!(f, "{}", a),
             Expr::Integer(n) => write!(f, "{}", n),
+            Expr::Float(n) => {
+                // Force a ".0" at the end if the double is actually an integer
+                if n.trunc() != *n {
+                    write!(f, "{}", n)
+                } else {
+                    write!(f, "{:.1}", n)
+                }
+            }
             Expr::String(s) => write!(f, "\"{}\"", s),
             Expr::LocalCall(fun_name, args) => {
                 write!(f, "({}(", fun_name)?;
