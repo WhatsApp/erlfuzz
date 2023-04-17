@@ -429,7 +429,7 @@ fn gen_pattern<RngType: rand::Rng>(
         } else {
             "false".to_string()
         }),
-        PatternKind::Atom => Pattern::Atom("a".to_string()), // TODO
+        PatternKind::Atom => Pattern::Atom(choose_random_atom(rng)),
         PatternKind::Integer => Pattern::Integer(choose_random_integer(rng)),
         PatternKind::Float => Pattern::Float(choose_random_double(rng)),
         PatternKind::Underscore => Pattern::Underscore(),
@@ -794,11 +794,7 @@ fn gen_expr<RngType: rand::Rng>(
             let name = m.functions.iter().choose(rng).unwrap().name.clone();
             Expr::Atom(name)
         }
-        ExprKind::AtomOther => {
-            // TODO: 2 distinct atoms is unlikely to be optimal, play with smarter strategies here.
-            let char = "ab".chars().choose(rng).unwrap();
-            Expr::Atom(char.to_string())
-        }
+        ExprKind::AtomOther => Expr::Atom(choose_random_atom(rng)),
         ExprKind::BooleanLiteral => {
             let boolean = ["true", "false"].iter().choose(rng).unwrap();
             Expr::Atom(boolean.to_string())
@@ -1315,6 +1311,24 @@ fn choose_random_double<RngType: rand::Rng>(rng: &mut RngType) -> f64 {
     .into_iter()
     .choose(rng)
     .unwrap()
+}
+
+fn choose_random_atom<RngType: rand::Rng>(rng: &mut RngType) -> String {
+    [
+        "ok",
+        "error",
+        "undefined",
+        "foo",
+        "'bar'",
+        "'foo bar'",
+        "' baz '",
+        "'làtîn1'",
+        "'原子'",
+    ]
+    .iter()
+    .choose(rng)
+    .unwrap()
+    .to_string()
 }
 
 fn gen_cases(
