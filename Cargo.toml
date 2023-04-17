@@ -1,0 +1,18 @@
+[package]
+name = "erlfuzz"
+version = "0.1.0"
+edition = "2021"
+authors = ["Robin Morisset <rmorisset@meta.com>"]
+categories = ["command-line-utilities", "development-tools", "development-tools::testing"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "3.2.8", features = ["derive"] }
+env_logger = "0.9.3"
+log = "0.4.17"
+num-bigint = { version = "0.4.3", features = ["rand"] }
+rand = "0.8.5"
+rand_chacha = "0.3.0"
+rand_distr = "0.4.3"
+triple_accel = "0.4.0"
