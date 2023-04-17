@@ -52,7 +52,7 @@ pub struct Config {
     pub deterministic: bool,
 }
 
-fn choose_arity(rng: &mut impl rand::Rng) -> usize {
+fn choose_arity<RngType: rand::Rng>(rng: &mut RngType) -> usize {
     let bin = Binomial::new(100, 0.03).unwrap();
     bin.sample(rng).try_into().unwrap()
 }
@@ -120,7 +120,10 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
 }
 
 // Calls every function exactly once, with the call protected by a catch expression.
-fn gen_start_function(rng: &mut impl rand::Rng, module: &mut Module) -> FunctionDeclaration {
+fn gen_start_function<RngType: rand::Rng>(
+    rng: &mut RngType,
+    module: &mut Module,
+) -> FunctionDeclaration {
     let mut exprs = Vec::new();
     let disable_shadowing = true;
     let mut env = Environment::new(disable_shadowing);
@@ -153,8 +156,8 @@ fn gen_start_function(rng: &mut impl rand::Rng, module: &mut Module) -> Function
 //   I've also found exceptions imprecise in other cases, for example in case of <<3.14/integer, 0.123/utf8>>,
 //   the (invalid) bitstring elements will be checked either left-to-right or right-to-left depending on the execution mode,
 //   resulting in slightly different errors.
-fn gen_wrapper_function(
-    rng: &mut impl rand::Rng,
+fn gen_wrapper_function<RngType: rand::Rng>(
+    rng: &mut RngType,
     module: &mut Module,
     func_decl_index: usize,
     wrapper: WrapperMode,
@@ -234,8 +237,8 @@ where
     v
 }
 
-fn gen_function(
-    rng: &mut impl rand::Rng,
+fn gen_function<RngType: rand::Rng>(
+    rng: &mut RngType,
     module: &mut Module,
     func_decl_index: usize,
     config: &Config,
@@ -254,8 +257,8 @@ fn gen_function(
     }
 }
 
-fn gen_function_clause(
-    rng: &mut impl rand::Rng,
+fn gen_function_clause<RngType: rand::Rng>(
+    rng: &mut RngType,
     module: &mut Module,
     ctx: Context,
     env: &mut Environment,
@@ -305,7 +308,11 @@ fn gen_function_clause(
     })
 }
 
-fn choose_weighted<T: Copy, F: Fn(T) -> u32>(rng: &mut impl rand::Rng, choices: &[T], f: F) -> T {
+fn choose_weighted<T: Copy, F: Fn(T) -> u32, RngType: rand::Rng>(
+    rng: &mut RngType,
+    choices: &[T],
+    f: F,
+) -> T {
     let weights = choices.iter().copied().map(f);
     let dist = WeightedIndex::new(weights).unwrap();
     let index = dist.sample(rng);
@@ -1331,8 +1338,8 @@ fn choose_random_atom<RngType: rand::Rng>(rng: &mut RngType) -> String {
     .to_string()
 }
 
-fn gen_cases(
-    rng: &mut impl rand::Rng,
+fn gen_cases<RngType: rand::Rng>(
+    rng: &mut RngType,
     m: &mut Module,
     ctx: Context,
     env: &mut Environment,
@@ -1369,8 +1376,8 @@ fn gen_cases(
     cases
 }
 
-fn gen_body(
-    rng: &mut impl rand::Rng,
+fn gen_body<RngType: rand::Rng>(
+    rng: &mut RngType,
     module: &mut Module,
     ctx: Context,
     env: &mut Environment,
@@ -1388,8 +1395,8 @@ fn gen_body(
     module.add_body(Body { exprs: es })
 }
 
-fn gen_guard_seq(
-    rng: &mut impl rand::Rng,
+fn gen_guard_seq<RngType: rand::Rng>(
+    rng: &mut RngType,
     module: &mut Module,
     ctx_arg: Context,
     env: &mut Environment,
@@ -1421,7 +1428,7 @@ enum TypeSpecifierKind {
     Utf32,
 }
 
-fn pick_type_specifier_kind(rng: &mut impl rand::Rng) -> TypeSpecifierKind {
+fn pick_type_specifier_kind<RngType: rand::Rng>(rng: &mut RngType) -> TypeSpecifierKind {
     [
         TypeSpecifierKind::Default,
         TypeSpecifierKind::Integer,
@@ -1454,8 +1461,8 @@ fn type_specifier_kind_to_type_approximation(kind: TypeSpecifierKind) -> TypeApp
     }
 }
 
-fn gen_type_specifier(
-    rng: &mut impl rand::Rng,
+fn gen_type_specifier<RngType: rand::Rng>(
+    rng: &mut RngType,
     kind: TypeSpecifierKind,
     size_expr: &Option<ExprId>,
     signedness_allowed: bool,
@@ -1502,8 +1509,8 @@ fn gen_type_specifier(
     }
 }
 
-fn gen_comprehension_element(
-    rng: &mut impl rand::Rng,
+fn gen_comprehension_element<RngType: rand::Rng>(
+    rng: &mut RngType,
     m: &mut Module,
     ctx: Context,
     env: &mut Environment,

@@ -221,9 +221,9 @@ impl Environment {
             disable_shadowing,
         }
     }
-    fn pick_bound_var_max_depth(
+    fn pick_bound_var_max_depth<RngType: rand::Rng>(
         &self,
-        rng: &mut impl rand::Rng,
+        rng: &mut RngType,
         wanted_type: &TypeApproximation,
         max_depth: usize,
     ) -> Option<(VarNum, TypeApproximation)> {
@@ -250,16 +250,16 @@ impl Environment {
         // probably not very urgent to fix, I don't think that the types are sufficiently precise for it to matter
         result
     }
-    pub fn pick_bound_var(
+    pub fn pick_bound_var<RngType: rand::Rng>(
         &self,
-        rng: &mut impl rand::Rng,
+        rng: &mut RngType,
         wanted_type: &TypeApproximation,
     ) -> Option<(VarNum, TypeApproximation)> {
         self.pick_bound_var_max_depth(rng, wanted_type, self.scopes.len())
     }
-    pub fn pick_used_var_for_pattern(
+    pub fn pick_used_var_for_pattern<RngType: rand::Rng>(
         &self,
-        rng: &mut impl rand::Rng,
+        rng: &mut RngType,
         wanted_type: &TypeApproximation,
     ) -> Option<(VarNum, TypeApproximation)> {
         let mut result = None;
@@ -298,7 +298,11 @@ impl Environment {
     fn current_scope_mut(&mut self) -> &mut Scope {
         self.scopes.last_mut().unwrap()
     }
-    pub fn make_fresh_var(&mut self, rng: &mut impl rand::Rng, t: TypeApproximation) -> VarNum {
+    pub fn make_fresh_var<RngType: rand::Rng>(
+        &mut self,
+        rng: &mut RngType,
+        t: TypeApproximation,
+    ) -> VarNum {
         // Skip some variable numbers, to have different sets of variables used in different branches of patterns/cases
         let v = if rng.gen::<bool>() {
             self.current_scope().next_available()
