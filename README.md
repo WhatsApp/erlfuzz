@@ -1,19 +1,19 @@
 # Erlfuzz
 
-erlfuzz is a small standalone generator of random erlang programs used to fuzz the erlang compiler and VM (and other tools such as erlfmt, dialyzer, eqWAlizer, etc..). It does not currently use coverage information or do anything especially clever, except for carefully handling Erlang's scoping rules.
+`erlfuzz` is a small standalone generator of random erlang programs used to fuzz the erlang compiler and VM (and other tools such as erlfmt, dialyzer, eqWAlizer, etc.). It does not currently use coverage information or do anything especially clever, except for carefully handling Erlang's scoping rules.
 
 ## Requirements
 
 Dependencies of the fuzzer itself:
-- Rust (including cargo)
-- Several libraries listed in Cargo.toml
+- [Rust (including cargo)](https://www.rust-lang.org/tools/install)
+- Several libraries listed in `Cargo.toml`
 
 Dependencies of the scripts wrapping fuzzing targets:
 - Bash
 - GNU Parallel
 - Timeout (part of GNU coreutils)
 
-The fuzzer has been tested on both Linux and MacOs.
+The fuzzer has been tested on both Linux and MacOS.
 On the latter, the scripts need a small tweak to run: removing or replacing calls to the `ulimit` command.
 
 ## How to build
@@ -24,7 +24,7 @@ On a machine with access to the internet: `cargo build --release`
 
 ### With a provided script
 
-If the goal is to fuzz `erlc` + `erl`, the easiest way is to use the provided `run_erl_once.sh` script from `erlfuzz/` as follows:
+If the goal is to fuzz `erlc` & `erl`, the easiest way is to use the provided `run_erl_once.sh` script from `erlfuzz/` as follows:
 ```
 mkdir -p out
 mkdir -p interesting
@@ -34,16 +34,34 @@ This will repeatedly run the fuzzer, store its output in a file in `out/`, call 
 It will automatically make use of all cores on your machine. If that is not what you want, you can limit it to 5 cores (for example) by passing `-j 5` to parallel.
 It will automatically stop after 1M iterations, just increase the parameter to `seq` if you want more.
 
-I recommend running this in a window controlled by `screen`, so it can be detached and survive the end of whatever terminal/ssh session you are using.
+I recommend running this in a window controlled by `tmux`, `screen`, etc., so it can be detached and survive the end of whatever terminal/ssh session you are using.
 
 There are similar scripts for fuzzing other tools such as `erlfmt`, `dialyzer`, or `eqwalizer`.
 For some of these, it may be required to pass additional options to `erlfuzz`:
-- `run_eqwalizer_once.sh`: `--disable-map-comprehensions --disable-maybe --disable-shadowing`
-- `run_erlfmt_once.sh`: `--disable-map-comprehensions --disable-maybe`
-- `run_infer_once.sh`: `--disable-map-comprehensions --disable-maybe --disable-shadowing` `--wrapper for-infer`
-- `verify_erl_jit.sh`: `--deterministic` `--wrapper printing`
-- `verify_erlc_opts.sh`: `--deterministic` `--wrapper printing`
-- `verify_infer_against_erl.sh`: `--deterministic --disable-map-comprehensions --disable-maybe --disable-shadowing` `--wrapper printing`
+- `run_eqwalizer_once.sh`:
+   - `--disable-map-comprehensions`
+   - `--disable-maybe`
+   - `--disable-shadowing`
+- `run_erlfmt_once.sh`:
+   - `--disable-map-comprehensions`
+   - `--disable-maybe`
+- `run_infer_once.sh`:
+   - `--disable-map-comprehensions`
+   - `--disable-maybe`
+   - `--disable-shadowing`
+   - `--wrapper for-infer`
+- `verify_erl_jit.sh`:
+   - `--deterministic`
+   - `--wrapper printing`
+- `verify_erlc_opts.sh`:
+   - `--deterministic`
+   - `--wrapper printing`
+- `verify_infer_against_erl.sh`:
+   - `--deterministic`
+   - `--disable-map-comprehensions`
+   - `--disable-maybe`
+   - `--disable-shadowing`
+   - `--wrapper printing`
 
 ### With another script
 
@@ -103,7 +121,7 @@ In particular, it does not yet generate any of the following:
 - `element` and `setelement`
 - `term_to_binary` and `binary_to_term`
 
-## Bugs found so far
+## Some of the bugs found so far
 
 BEAM VM:
 - https://github.com/erlang/otp/issues/6634
