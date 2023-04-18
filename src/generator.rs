@@ -3,6 +3,7 @@
  * This source code is licensed under the Apache 2.0 license found in
  * the LICENSE file in the root directory of this source tree.
  */
+use std::cmp::Eq;
 use std::fmt;
 
 use num_bigint::BigInt;
@@ -758,10 +759,27 @@ fn recurse_any_expr<RngType: rand::Rng>(
     let ctx = ctx
         .with_type(wanted_type)
         .for_recursion_with_spent_size(*size_to_incr);
-    let kind = pick_expr_kind(rng, ctx, ALL_EXPR_KINDS);
-    gen_expr(rng, module, ctx, env, size_to_incr, kind)
+    let mut available_kinds = Vec::from(ALL_EXPR_KINDS);
+    loop {
+        let kind = pick_expr_kind(rng, ctx, &available_kinds);
+        match gen_expr(rng, module, ctx, env, size_to_incr, kind) {
+            Some(e_id) => return e_id,
+            None => remove_element(&mut available_kinds, &kind),
+        }
+    }
 }
 
+fn remove_element<T: Eq>(vec: &mut Vec<T>, element: &T) {
+    for (index, e) in vec.iter().enumerate() {
+        if e == element {
+            vec.swap_remove(index);
+            return;
+        }
+    }
+    unreachable!();
+}
+
+// May fail for some expr kinds depending on the environment
 fn gen_expr<RngType: rand::Rng>(
     rng: &mut RngType,
     m: &mut Module,
@@ -769,23 +787,13 @@ fn gen_expr<RngType: rand::Rng>(
     env: &mut Environment,
     size_to_incr: &mut ASTSize,
     choice: ExprKind,
-) -> ExprId {
+) -> Option<ExprId> {
     let mut size = 1;
     let expr = match choice {
         ExprKind::Nil => Expr::Nil(),
         ExprKind::Var => match env.pick_bound_var(rng, &ctx.expected_type) {
             Some((v, _t)) => Expr::Var(v),
-            // If we can't find a variable of an appropriate type, we use some arbitrary literal
-            None => match ctx.expected_type {
-                // TODO: do better for Float, Tuple, Fun, Pid, Reference
-                Any | Integer | Float | Number | Tuple | Bottom | Fun | Pid | Reference => {
-                    Expr::Integer(BigInt::from(0i32))
-                }
-                Atom | Boolean => Expr::Atom("true".to_string()),
-                List => Expr::Nil(),
-                Map => Expr::MapLiteral(Vec::new()),
-                Bitstring => Expr::BitstringConstruction(Vec::new()),
-            },
+            None => return None,
         },
         ExprKind::Integer => Expr::Integer(choose_random_integer(rng)),
         ExprKind::Float => Expr::Float(choose_random_double(rng)),
@@ -1273,7 +1281,7 @@ fn gen_expr<RngType: rand::Rng>(
         }
     };
     *size_to_incr += expr.size(m);
-    m.add_expr(expr)
+    Some(m.add_expr(expr))
 }
 
 fn choose_random_integer<RngType: rand::Rng>(rng: &mut RngType) -> BigInt {
