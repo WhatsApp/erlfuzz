@@ -22,7 +22,8 @@ pub enum TypeApproximation {
     Bitstring,
     Fun,
     Pid,
-    Reference,
+    Port,
+    Ref,
     Bottom,
 }
 impl TypeApproximation {

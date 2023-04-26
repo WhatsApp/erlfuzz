@@ -11,6 +11,7 @@ mod core_types;
 mod environment;
 mod generator;
 mod reducer;
+mod stdlib;
 mod types;
 
 pub use ast::Module;

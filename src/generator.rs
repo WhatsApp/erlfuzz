@@ -260,8 +260,8 @@ where
 
 pub fn choose_type<RngType: rand::Rng>(rng: &mut RngType) -> TypeApproximation {
     [
-        Any, Integer, Float, Number, Tuple, Atom, List, Boolean, Map, Bitstring, Fun, Pid,
-        Reference, Bottom,
+        Any, Integer, Float, Number, Tuple, Atom, List, Boolean, Map, Bitstring, Fun, Pid, Port,
+        Ref, Bottom,
     ]
     .into_iter()
     .choose(rng)
@@ -844,8 +844,12 @@ fn gen_expr<RngType: rand::Rng>(
                 true => InGuard,
                 false => NotInGuard,
             };
+            let determinism = match ctx.deterministic {
+                true => DeterministicOnly,
+                false => AnyDeterminism,
+            };
             let maybe_fun_information =
-                env.pick_function(rng, &ctx.expected_type, AnyDeterminism, in_guard, Local);
+                env.pick_function(rng, &ctx.expected_type, determinism, in_guard, Local);
             let (name, function_type) = match maybe_fun_information {
                 None => return None,
                 Some(FunctionInformation { name, t, .. }) => (name.clone(), t.clone()),
@@ -862,8 +866,12 @@ fn gen_expr<RngType: rand::Rng>(
             m.add_expr(Expr::LocalCall(name, args), function_type.return_type)
         }
         ExprKind::RemoteCall => {
+            let determinism = match ctx.deterministic {
+                true => DeterministicOnly,
+                false => AnyDeterminism,
+            };
             let maybe_fun_information =
-                env.pick_function(rng, &ctx.expected_type, AnyDeterminism, NotInGuard, Remote);
+                env.pick_function(rng, &ctx.expected_type, determinism, NotInGuard, Remote);
             let (module_name, name, function_type) = match maybe_fun_information {
                 None => return None,
                 Some(FunctionInformation {

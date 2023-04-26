@@ -20,7 +20,7 @@ use crate::environment::ReuseSafety::*;
 use crate::environment::Scope::*;
 use crate::environment::ScopeClosureBehavior::*;
 use crate::environment::Shadowing::*;
-use crate::types::TypeApproximation::*;
+use crate::stdlib::*;
 use crate::types::*;
 
 /* Erlang's scoping rules are maddeningly inconsistent. For examples:
@@ -228,77 +228,21 @@ impl Environment {
                     t: join_function_types(clause_types),
                     determinism: DeterministicOnly,
                     guard_context: NotInGuard,
+                    call_locality: Local,
                 },
             )
             .collect::<Vec<_>>();
-        [
-            ("is_atom", DeterministicOnly, InGuard, Boolean, vec![Any]),
-            ("is_binary", DeterministicOnly, InGuard, Boolean, vec![Any]),
-            (
-                "is_bitstring",
-                DeterministicOnly,
-                InGuard,
-                Boolean,
-                vec![Any],
-            ),
-            ("is_boolean", DeterministicOnly, InGuard, Boolean, vec![Any]),
-            ("is_float", DeterministicOnly, InGuard, Boolean, vec![Any]),
-            (
-                "is_function",
-                DeterministicOnly,
-                InGuard,
-                Boolean,
-                vec![Any],
-            ),
-            ("is_integer", DeterministicOnly, InGuard, Boolean, vec![Any]),
-            ("is_list", DeterministicOnly, InGuard, Boolean, vec![Any]),
-            ("is_map", DeterministicOnly, InGuard, Boolean, vec![Any]),
-            ("is_number", DeterministicOnly, InGuard, Boolean, vec![Any]),
-            ("is_pid", DeterministicOnly, InGuard, Boolean, vec![Any]),
-            ("is_port", DeterministicOnly, InGuard, Boolean, vec![Any]),
-            (
-                "is_reference",
-                DeterministicOnly,
-                InGuard,
-                Boolean,
-                vec![Any],
-            ),
-            ("is_tuple", DeterministicOnly, InGuard, Boolean, vec![Any]),
-            ("node", DeterministicOnly, InGuard, Atom, vec![]),
-            ("self", AnyDeterminism, InGuard, Pid, vec![]),
-            (
-                "garbage_collect",
-                DeterministicOnly,
-                NotInGuard,
-                Boolean,
-                vec![],
-            ), // true
-            ("alias", AnyDeterminism, NotInGuard, Reference, vec![]),
-            ("date", AnyDeterminism, NotInGuard, Tuple, vec![]), // {Integer, Integer, Integer}
-            ("erase", AnyDeterminism, NotInGuard, List, vec![]), // [{Any, Any}]
-            ("get", AnyDeterminism, NotInGuard, List, vec![]),   // [{Any, Any}]
-            ("get_keys", AnyDeterminism, NotInGuard, List, vec![]),
-            ("group_leader", AnyDeterminism, NotInGuard, Pid, vec![]),
-            // "halt", we're not interested in stopping the VM during test
-            ("is_alive", AnyDeterminism, NotInGuard, Boolean, vec![]),
-            ("nodes", AnyDeterminism, NotInGuard, List, vec![]), // [atom()]
-            ("now", AnyDeterminism, NotInGuard, Tuple, vec![]), // {integer(), integer(), integer()}
-            ("pre_loaded", AnyDeterminism, NotInGuard, List, vec![]), // [atom()]
-            ("processes", AnyDeterminism, NotInGuard, List, vec![]), // [pid()]
-            ("registered", AnyDeterminism, NotInGuard, List, vec![]), // [atom()]
-            ("time", AnyDeterminism, NotInGuard, Tuple, vec![]), // {integer, integer, integer}
-        ]
-        .into_iter()
-        .for_each(
-            |(name, determinism, guard_context, return_type, arg_types)| {
+        ERLANG_FUNCTIONS.iter().for_each(
+            |(name, determinism, guard_context, call_locality, return_type, arg_types)| {
                 funs.push(FunctionInformation {
                     module_name: "erlang".to_string(),
                     name: name.to_string(),
-                    determinism,
-                    guard_context,
+                    determinism: *determinism,
+                    guard_context: *guard_context,
+                    call_locality: *call_locality,
                     t: FunctionTypeApproximation {
-                        return_type,
-                        arg_types,
+                        return_type: return_type.clone(),
+                        arg_types: arg_types.to_vec(),
                     },
                 })
             },
@@ -588,23 +532,21 @@ impl Environment {
         return_type: &TypeApproximation,
         determinism_arg: Determinism,
         guard_context_arg: GuardContext,
-        call_locality: CallLocality,
+        call_locality_arg: CallLocality,
     ) -> Option<&FunctionInformation> {
         self.funs
             .iter()
             .filter(
                 |FunctionInformation {
                      t,
-                     module_name,
                      determinism,
                      guard_context,
+                     call_locality,
                      ..
                  }| {
                     ((determinism_arg == AnyDeterminism) || (*determinism == DeterministicOnly))
                         && ((guard_context_arg == NotInGuard) || (*guard_context == InGuard))
-                        && ((call_locality == Remote)
-                            || (module_name == "?MODULE")
-                            || (module_name == "erlang"))
+                        && ((call_locality_arg == Remote) || (*call_locality == Local))
                         && t.return_type.is_subtype_of(return_type)
                 },
             )
@@ -637,6 +579,7 @@ pub struct FunctionInformation {
     pub t: FunctionTypeApproximation,
     pub determinism: Determinism,
     pub guard_context: GuardContext,
+    pub call_locality: CallLocality,
 }
 
 fn make_max<T>(old: &mut T, new: T)
