@@ -86,6 +86,8 @@ For example:
 ```
 Would reduce the testcase that was generated with seed 3137934125722527840, use `out/foobar.erl` as a scratch file, and store the result in `minimized/foobar.erl`.
 
+Depending on the formatting of the error messages that are output by the tool under test, it can be necessary to adjust the similarity heuristic with the `--max-distance` or the `--num-lines` options. Dialyzer for example includes non-deterministic numbers (timestamp, process id) in its error messages, so `--max-distance 10` is required for erlfuzz to ignore those.
+
 ## Debugging erlfuzz
 
 If erlfuzz itself is misbehaving, one way to investigate is to set the environment variable RUST_LOG=debug or RUST_LOG=trace (even more verbose) to make it emit a log of its actions to stderr.
@@ -191,11 +193,17 @@ erlc:
 - https://github.com/erlang/otp/pull/6974
 - https://github.com/erlang/otp/issues/7011
 - https://github.com/erlang/otp/issues/7128
+- https://github.com/erlang/otp/issues/7142
+- https://github.com/erlang/otp/issues/7145
+- https://github.com/erlang/otp/issues/7147
 
 dialyzer:
 - https://github.com/erlang/otp/issues/6419
 - https://github.com/erlang/otp/issues/6473
+- https://github.com/erlang/otp/issues/6518
 - https://github.com/erlang/otp/issues/6580
+- https://github.com/erlang/otp/issues/7138
+- https://github.com/erlang/otp/issues/7153
 
 erlfmt:
 - https://github.com/WhatsApp/erlfmt/issues/338
