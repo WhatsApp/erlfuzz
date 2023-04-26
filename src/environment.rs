@@ -9,13 +9,19 @@ use log::debug;
 use log::trace;
 use rand::prelude::IteratorRandom;
 
-use crate::context::*;
+use crate::ast::FunctionDeclaration;
+use crate::ast::Module;
 use crate::core_types::*;
+use crate::environment::CallLocality::*;
+use crate::environment::Determinism::*;
+use crate::environment::GuardContext::*;
 use crate::environment::MultiScopeKind::*;
 use crate::environment::ReuseSafety::*;
 use crate::environment::Scope::*;
 use crate::environment::ScopeClosureBehavior::*;
 use crate::environment::Shadowing::*;
+use crate::types::TypeApproximation::*;
+use crate::types::*;
 
 /* Erlang's scoping rules are maddeningly inconsistent. For examples:
  * - Patterns are matched in parallel
@@ -205,10 +211,98 @@ impl Scope {
 pub struct Environment {
     scopes: Vec<Scope>,
     scope_counter: usize,
+    funs: Vec<FunctionInformation>,
     pub disable_shadowing: bool,
 }
 impl Environment {
-    pub fn new(disable_shadowing: bool) -> Self {
+    pub fn new(m: &Module, disable_shadowing: bool) -> Self {
+        let mut funs = m
+            .functions
+            .iter()
+            .map(
+                |FunctionDeclaration {
+                     name, clause_types, ..
+                 }| FunctionInformation {
+                    name: name.to_string(),
+                    module_name: "?MODULE".to_string(),
+                    t: join_function_types(clause_types),
+                    determinism: DeterministicOnly,
+                    guard_context: NotInGuard,
+                },
+            )
+            .collect::<Vec<_>>();
+        [
+            ("is_atom", DeterministicOnly, InGuard, Boolean, vec![Any]),
+            ("is_binary", DeterministicOnly, InGuard, Boolean, vec![Any]),
+            (
+                "is_bitstring",
+                DeterministicOnly,
+                InGuard,
+                Boolean,
+                vec![Any],
+            ),
+            ("is_boolean", DeterministicOnly, InGuard, Boolean, vec![Any]),
+            ("is_float", DeterministicOnly, InGuard, Boolean, vec![Any]),
+            (
+                "is_function",
+                DeterministicOnly,
+                InGuard,
+                Boolean,
+                vec![Any],
+            ),
+            ("is_integer", DeterministicOnly, InGuard, Boolean, vec![Any]),
+            ("is_list", DeterministicOnly, InGuard, Boolean, vec![Any]),
+            ("is_map", DeterministicOnly, InGuard, Boolean, vec![Any]),
+            ("is_number", DeterministicOnly, InGuard, Boolean, vec![Any]),
+            ("is_pid", DeterministicOnly, InGuard, Boolean, vec![Any]),
+            ("is_port", DeterministicOnly, InGuard, Boolean, vec![Any]),
+            (
+                "is_reference",
+                DeterministicOnly,
+                InGuard,
+                Boolean,
+                vec![Any],
+            ),
+            ("is_tuple", DeterministicOnly, InGuard, Boolean, vec![Any]),
+            ("node", DeterministicOnly, InGuard, Atom, vec![]),
+            ("self", AnyDeterminism, InGuard, Pid, vec![]),
+            (
+                "garbage_collect",
+                DeterministicOnly,
+                NotInGuard,
+                Boolean,
+                vec![],
+            ), // true
+            ("alias", AnyDeterminism, NotInGuard, Reference, vec![]),
+            ("date", AnyDeterminism, NotInGuard, Tuple, vec![]), // {Integer, Integer, Integer}
+            ("erase", AnyDeterminism, NotInGuard, List, vec![]), // [{Any, Any}]
+            ("get", AnyDeterminism, NotInGuard, List, vec![]),   // [{Any, Any}]
+            ("get_keys", AnyDeterminism, NotInGuard, List, vec![]),
+            ("group_leader", AnyDeterminism, NotInGuard, Pid, vec![]),
+            // "halt", we're not interested in stopping the VM during test
+            ("is_alive", AnyDeterminism, NotInGuard, Boolean, vec![]),
+            ("nodes", AnyDeterminism, NotInGuard, List, vec![]), // [atom()]
+            ("now", AnyDeterminism, NotInGuard, Tuple, vec![]), // {integer(), integer(), integer()}
+            ("pre_loaded", AnyDeterminism, NotInGuard, List, vec![]), // [atom()]
+            ("processes", AnyDeterminism, NotInGuard, List, vec![]), // [pid()]
+            ("registered", AnyDeterminism, NotInGuard, List, vec![]), // [atom()]
+            ("time", AnyDeterminism, NotInGuard, Tuple, vec![]), // {integer, integer, integer}
+        ]
+        .into_iter()
+        .for_each(
+            |(name, determinism, guard_context, return_type, arg_types)| {
+                funs.push(FunctionInformation {
+                    module_name: "erlang".to_string(),
+                    name: name.to_string(),
+                    determinism,
+                    guard_context,
+                    t: FunctionTypeApproximation {
+                        return_type,
+                        arg_types,
+                    },
+                })
+            },
+        );
         Environment {
             scopes: vec![Scope::Single {
                 element: ScopeElement {
@@ -218,6 +312,7 @@ impl Environment {
                 scope_counter: 0,
             }],
             scope_counter: 0,
+            funs,
             disable_shadowing,
         }
     }
@@ -466,7 +561,7 @@ impl Environment {
         self.close_scope(behavior);
         result
     }
-    pub fn with_multi_scope_auto<T, F: FnMut(&mut Self) -> T>(
+    pub fn with_multi_scope_auto<T, F: FnMut(&mut Self, usize) -> T>(
         &mut self,
         kind: MultiScopeKind,
         shadowing: Shadowing,
@@ -481,11 +576,67 @@ impl Environment {
                 if i > 0 {
                     env.shift_to_sibling(shift_safety);
                 }
-                result.push(f(env));
+                result.push(f(env, i));
             }
             result
         })
     }
+
+    pub fn pick_function<RngType: rand::Rng>(
+        &self,
+        rng: &mut RngType,
+        return_type: &TypeApproximation,
+        determinism_arg: Determinism,
+        guard_context_arg: GuardContext,
+        call_locality: CallLocality,
+    ) -> Option<&FunctionInformation> {
+        self.funs
+            .iter()
+            .filter(
+                |FunctionInformation {
+                     t,
+                     module_name,
+                     determinism,
+                     guard_context,
+                     ..
+                 }| {
+                    ((determinism_arg == AnyDeterminism) || (*determinism == DeterministicOnly))
+                        && ((guard_context_arg == NotInGuard) || (*guard_context == InGuard))
+                        && ((call_locality == Remote)
+                            || (module_name == "?MODULE")
+                            || (module_name == "erlang"))
+                        && t.return_type.is_subtype_of(return_type)
+                },
+            )
+            .choose(rng)
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum GuardContext {
+    InGuard,
+    NotInGuard,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Determinism {
+    DeterministicOnly,
+    AnyDeterminism,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum CallLocality {
+    Local,
+    Remote,
+}
+
+#[derive(Clone, Debug)]
+pub struct FunctionInformation {
+    pub name: String,
+    pub module_name: String,
+    pub t: FunctionTypeApproximation,
+    pub determinism: Determinism,
+    pub guard_context: GuardContext,
 }
 
 fn make_max<T>(old: &mut T, new: T)

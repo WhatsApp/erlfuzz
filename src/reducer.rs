@@ -11,6 +11,7 @@ use log::info;
 use crate::ast::*;
 use crate::core_types::*;
 use crate::generator::make_vec;
+use crate::types::TypeApproximation;
 
 /// run returns true iff its argument still exhibits the behavior that we want (typically a crash)
 /// reduce mutates its first argument in-place while guaranteeing that run will always return true on it
@@ -67,7 +68,7 @@ fn try_trivialize_func_decl<F: Fn(&Module) -> bool>(
 ) -> bool {
     let name = module.functions[func_decl_id].name.clone();
     let arity = module.functions[func_decl_id].arity;
-    let ok_expr = module.add_expr(Expr::Atom("ok".to_string()));
+    let ok_expr = module.add_expr(Expr::Atom("ok".to_string()), TypeApproximation::Atom);
     let body = module.add_body(Body {
         exprs: vec![ok_expr],
     });
@@ -886,7 +887,8 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                 ) {
                     *else_section = None;
                 } else {
-                    let trivial_expr_id = module.add_expr(Expr::Atom("ok".to_string()));
+                    let trivial_expr_id =
+                        module.add_expr(Expr::Atom("ok".to_string()), TypeApproximation::Atom);
                     let new_expr = Expr::Case(trivial_expr_id, else_cases.clone());
                     if try_replace_expr(
                         module,

@@ -10,6 +10,8 @@ use BinaryOperator::*;
 use UnaryOperator::*;
 
 use crate::core_types::*;
+use crate::types::FunctionTypeApproximation;
+use crate::types::TypeApproximation;
 use crate::Config;
 
 pub trait SizedAst {
@@ -821,6 +823,7 @@ pub struct FunctionDeclaration {
     pub clauses: Vec<FunctionClauseId>,
     pub name: String,
     pub arity: Arity,
+    pub clause_types: Vec<FunctionTypeApproximation>,
 }
 impl SizedAst for FunctionDeclaration {
     fn size(&self, module: &Module) -> ASTSize {
@@ -842,6 +845,7 @@ pub struct Module<'a> {
     config: Config,
     patterns: Vec<Pattern>,
     exprs: Vec<Expr>,
+    expr_types: Vec<TypeApproximation>,
     function_clauses: Vec<FunctionClause>,
     bodies: Vec<Body>,
     guard_seqs: Vec<GuardSeq>,
@@ -882,6 +886,7 @@ impl<'a> Module<'a> {
             functions,
             patterns: Vec::new(),
             exprs: Vec::new(),
+            expr_types: Vec::new(),
             function_clauses: Vec::new(),
             bodies: Vec::new(),
             guard_seqs: Vec::new(),
@@ -893,9 +898,17 @@ impl<'a> Module<'a> {
     pub fn expr_mut(&mut self, id: ExprId) -> &mut Expr {
         &mut self.exprs[id.0 as usize]
     }
-    pub fn add_expr(&mut self, e: Expr) -> ExprId {
+    pub fn add_expr(&mut self, e: Expr, t: TypeApproximation) -> ExprId {
         self.exprs.push(e);
+        self.expr_types.push(t);
+        assert!(self.exprs.len() == self.expr_types.len());
         ExprId((self.exprs.len() - 1).try_into().unwrap())
+    }
+    pub fn expr_type(&self, id: ExprId) -> &TypeApproximation {
+        &self.expr_types[id.0 as usize]
+    }
+    pub fn body_type(&self, id: BodyId) -> &TypeApproximation {
+        self.expr_type(*self.body(id).exprs.last().unwrap())
     }
     pub fn pattern(&self, id: PatternId) -> &Pattern {
         &self.patterns[id.0 as usize]
