@@ -195,6 +195,13 @@ erlc:
 - https://github.com/erlang/otp/issues/7142
 - https://github.com/erlang/otp/issues/7145
 - https://github.com/erlang/otp/issues/7147
+- https://github.com/erlang/otp/issues/7168
+- https://github.com/erlang/otp/issues/7170
+- https://github.com/erlang/otp/issues/7171
+- https://github.com/erlang/otp/commit/4e02a5789faebd31bdb6af101fad442316367c96
+- https://github.com/erlang/otp/issues/7178
+- https://github.com/erlang/otp/issues/7179
+- https://github.com/erlang/otp/issues/7180
 
 dialyzer:
 - https://github.com/erlang/otp/issues/6419
@@ -203,6 +210,7 @@ dialyzer:
 - https://github.com/erlang/otp/issues/6580
 - https://github.com/erlang/otp/issues/7138
 - https://github.com/erlang/otp/issues/7153
+- https://github.com/erlang/otp/issues/7181
 
 erlfmt:
 - https://github.com/WhatsApp/erlfmt/issues/338
