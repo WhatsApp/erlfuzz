@@ -88,6 +88,9 @@ Would reduce the testcase that was generated with seed 3137934125722527840, use 
 
 Depending on the formatting of the error messages that are output by the tool under test, it can be necessary to adjust the similarity heuristic with the `--max-distance` or the `--num-lines` options. Dialyzer for example includes non-deterministic numbers (timestamp, process id) in its error messages, so `--max-distance 10` is required for erlfuzz to ignore those.
 
+You can ask erlfuzz to automatically reduce the bugs it find as they are found, by using `erlfuzz fuzz-and-reduce`.
+This is a tiny wrapper around doing `erlfuzz fuzz` followed by `erlfuzz reduce`, and needs all of the same arguments.
+
 ## Debugging erlfuzz
 
 If erlfuzz itself is misbehaving, one way to investigate is to set the environment variable RUST_LOG=debug or RUST_LOG=trace (even more verbose) to make it emit a log of its actions to stderr.

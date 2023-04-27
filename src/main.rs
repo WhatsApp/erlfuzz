@@ -59,11 +59,33 @@ struct ReduceArgs {
     minimized_directory: String,
 }
 
+#[derive(clap::Args)]
+struct FuzzAndReduceArgs {
+    #[clap(value_parser)]
+    module_name: String,
+    #[clap(short, long, value_parser)]
+    seed: Option<u64>,
+    #[clap(long, value_parser, default_value_t = DEFAULT_LINES_TO_COMPARE)]
+    num_lines: usize,
+    #[clap(long, value_parser, default_value_t = DEFAULT_MAX_OUTPUT_DISTANCE)]
+    max_distance: u32,
+    /// Should take the .erl file as argument, and fail on it.
+    #[clap(short, long, value_parser)]
+    command: String,
+    #[clap(long, value_parser)]
+    tmp_directory: String,
+    #[clap(long, value_parser)]
+    interesting_directory: String,
+    #[clap(long, value_parser)]
+    minimized_directory: String,
+}
+
 #[derive(clap::Subcommand)]
 enum Command {
     Generate(GenerateArgs),
     Fuzz(FuzzArgs),
     Reduce(ReduceArgs),
+    FuzzAndReduce(FuzzAndReduceArgs),
 }
 
 #[derive(clap::Parser)]
@@ -191,6 +213,92 @@ fn is_output_similar(
         && is_string_prefix_similar(&output1.stderr, &output2.stderr, num_lines, distance)
 }
 
+fn make_filepath(directory_path: &str, module_name: &str, extension: &str) -> PathBuf {
+    let filename = module_name.to_string() + extension;
+    [directory_path.to_string(), filename]
+        .into_iter()
+        .collect::<PathBuf>()
+}
+
+// returns true if this module revealed a bug and was stored in interesting_directory
+fn fuzz_module_and_store_results(
+    module: &erlfuzz::Module,
+    command: &str,
+    tmp_directory: &str,
+    interesting_directory: &str,
+) -> bool {
+    let filepath = make_filepath(tmp_directory, module.module_name, ".erl");
+    let output = run_command_on_module(command, &module, &filepath);
+    if output.status.success() {
+        info!(
+            "{}  judged not interesting, deleted",
+            module.module_name.to_string()
+        );
+        std::process::Command::new("rm")
+            .arg(&filepath)
+            .output()
+            .unwrap();
+        false
+    } else {
+        let new_filepath = make_filepath(interesting_directory, module.module_name, ".erl");
+        warn!(
+            "INTERESTING: storing this test case as {}",
+            new_filepath.display()
+        );
+        std::process::Command::new("mv")
+            .args([&filepath, &new_filepath])
+            .output()
+            .unwrap();
+        let stderr_filepath = make_filepath(interesting_directory, module.module_name, ".stderr");
+        let stdout_filepath = make_filepath(interesting_directory, module.module_name, ".stdout");
+        let _ = fs::write(
+            &stderr_filepath,
+            std::str::from_utf8(&output.stderr).unwrap(),
+        );
+        let _ = fs::write(
+            &stdout_filepath,
+            std::str::from_utf8(&output.stdout).unwrap(),
+        );
+        true
+    }
+}
+
+fn reduce_module_and_store_results(
+    module: &mut erlfuzz::Module,
+    command: &str,
+    tmp_directory: &str,
+    minimized_directory: &str,
+    num_lines: usize,
+    max_distance: u32,
+) {
+    let filepath = make_filepath(tmp_directory, module.module_name, ".erl");
+    let expected_output = run_command_on_module(command, &module, &filepath);
+    if expected_output.status.success() {
+        error!("Error: the command does not fail on the initial module! ");
+        process::exit(1);
+    }
+    erlfuzz::reduce_module(module, &|m| {
+        let output = run_command_on_module(command, m, &filepath);
+        std::process::Command::new("rm")
+            .arg(&filepath)
+            .output()
+            .unwrap();
+        is_output_similar(&output, &expected_output, num_lines, max_distance)
+    });
+    let new_filepath = make_filepath(minimized_directory, module.module_name, ".erl");
+    match fs::write(&new_filepath, module.to_string()) {
+        Ok(_) => (),
+        Err(err) => {
+            error!(
+                "Error: \"{}\" while attempting to write to {}",
+                err,
+                new_filepath.display()
+            );
+            process::exit(3)
+        }
+    }
+}
+
 fn main() {
     env_logger::init();
     let args = Cli::parse();
@@ -203,90 +311,47 @@ fn main() {
                 .unwrap_or_else(|| "fuzztest".to_string());
             let module = erlfuzz::gen_module(&module_name, seed, config);
             println!("{}", module);
-            process::exit(0);
         }
         Command::Fuzz(fuzz_args) => {
             let seed = fuzz_args.seed.unwrap_or_else(rand::random::<u64>);
             let module = erlfuzz::gen_module(&fuzz_args.module_name, seed, config);
-            let filename = fuzz_args.module_name.clone() + ".erl";
-            let filepath: PathBuf = [&fuzz_args.tmp_directory, &filename].iter().collect();
-            let output = run_command_on_module(&fuzz_args.command, &module, &filepath);
-            if output.status.success() {
-                info!(
-                    "{}  judged not interesting, deleted",
-                    fuzz_args.module_name.clone()
-                );
-                std::process::Command::new("rm")
-                    .arg(&filepath)
-                    .output()
-                    .unwrap();
-            } else {
-                let new_filepath: PathBuf = [&fuzz_args.interesting_directory, &filename]
-                    .iter()
-                    .collect();
-                warn!(
-                    "INTERESTING: storing this test case as {}",
-                    new_filepath.display()
-                );
-                std::process::Command::new("mv")
-                    .args([&filepath, &new_filepath])
-                    .output()
-                    .unwrap();
-                let stderr_filename = fuzz_args.module_name.clone() + ".stderr";
-                let stdout_filename = fuzz_args.module_name.clone() + ".stdout";
-                let stderr_filepath = [&fuzz_args.interesting_directory, &stderr_filename]
-                    .iter()
-                    .collect::<PathBuf>();
-                let stdout_filepath = [&fuzz_args.interesting_directory, &stdout_filename]
-                    .iter()
-                    .collect::<PathBuf>();
-                let _ = fs::write(
-                    &stderr_filepath,
-                    std::str::from_utf8(&output.stderr).unwrap(),
-                );
-                let _ = fs::write(
-                    &stdout_filepath,
-                    std::str::from_utf8(&output.stdout).unwrap(),
+            let _ = fuzz_module_and_store_results(
+                &module,
+                &fuzz_args.command,
+                &fuzz_args.tmp_directory,
+                &fuzz_args.interesting_directory,
+            );
+        }
+        Command::FuzzAndReduce(sub_args) => {
+            let seed = sub_args.seed.unwrap_or_else(rand::random::<u64>);
+            let mut module = erlfuzz::gen_module(&sub_args.module_name, seed, config);
+            if fuzz_module_and_store_results(
+                &module,
+                &sub_args.command,
+                &sub_args.tmp_directory,
+                &sub_args.interesting_directory,
+            ) {
+                reduce_module_and_store_results(
+                    &mut module,
+                    &sub_args.command,
+                    &sub_args.tmp_directory,
+                    &sub_args.minimized_directory,
+                    sub_args.num_lines,
+                    sub_args.max_distance,
                 );
             }
         }
         Command::Reduce(reduce_args) => {
             let mut module =
                 erlfuzz::gen_module(&reduce_args.module_name, reduce_args.seed, config);
-            let filename = reduce_args.module_name.clone() + ".erl";
-            let filepath: PathBuf = [&reduce_args.tmp_directory, &filename].iter().collect();
-            let expected_output = run_command_on_module(&reduce_args.command, &module, &filepath);
-            if expected_output.status.success() {
-                error!("Error: the command does not fail on the initial module! ");
-                process::exit(1);
-            }
-            erlfuzz::reduce_module(&mut module, &|m| {
-                let output = run_command_on_module(&reduce_args.command, m, &filepath);
-                std::process::Command::new("rm")
-                    .arg(&filepath)
-                    .output()
-                    .unwrap();
-                is_output_similar(
-                    &output,
-                    &expected_output,
-                    reduce_args.num_lines,
-                    reduce_args.max_distance,
-                )
-            });
-            let new_filepath: PathBuf = [&reduce_args.minimized_directory, &filename]
-                .iter()
-                .collect();
-            match fs::write(&new_filepath, module.to_string()) {
-                Ok(_) => (),
-                Err(err) => {
-                    error!(
-                        "Error: \"{}\" while attempting to write to {}",
-                        err,
-                        new_filepath.display()
-                    );
-                    process::exit(3)
-                }
-            }
+            reduce_module_and_store_results(
+                &mut module,
+                &reduce_args.command,
+                &reduce_args.tmp_directory,
+                &reduce_args.minimized_directory,
+                reduce_args.num_lines,
+                reduce_args.max_distance,
+            );
         }
     }
 }
