@@ -179,12 +179,7 @@ pub const ERLANG_FUNCTIONS: &[(
     ("setelement", DeterministicOnly, NotInGuard, Local, Tuple, &[Integer, Tuple, Any]),
     ("size", DeterministicOnly, NotInGuard, Local, Integer, &[Tuple]),
     ("size", DeterministicOnly, NotInGuard, Local, Integer, &[List]),
-    ("spawn", AnyDeterminism, NotInGuard, Local, Pid, &[Fun]),
-    ("spawn_link", AnyDeterminism, NotInGuard, Local, Pid, &[Fun]),
-    ("spawn_monitor", AnyDeterminism, NotInGuard, Local, Tuple, &[Fun]),
-    ("spawn_request", AnyDeterminism, NotInGuard, Local, Ref, &[Fun]),
-    // spawn/2, /3, /4, spawn_link/2, /3, /4, spawn_monitor/2, /3, /4, spawn_opt, spawn_request/2, /3, /4, /5
-    ("spawn_request_abandon", AnyDeterminism, NotInGuard, Local, Boolean, &[Ref]),
+    // spawn, spawn_link, spawn_monitor, spawn_opt, spawn_request, spawn_request_abandon
     ("split_binary", DeterministicOnly, NotInGuard, Local, Tuple, &[Bitstring, Integer]),
     // start_timer, statistics, suspend_process, system_flag, system_info, system_monitor, system_profile
     ("term_to_binary", AnyDeterminism, NotInGuard, Local, Bitstring, &[Any]),
