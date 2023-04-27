@@ -10,6 +10,7 @@ use BinaryOperator::*;
 use UnaryOperator::*;
 
 use crate::core_types::*;
+use crate::generator::WrapperMode;
 use crate::types::FunctionTypeApproximation;
 use crate::types::TypeApproximation;
 use crate::Config;
@@ -853,13 +854,43 @@ pub struct Module<'a> {
 impl fmt::Display for Module<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let config = self.config;
-        write!(f, "% initial seed: {}\n", self.initial_seed)?;
-        write!(f, "% max-size: {}\n", config.max_size)?;
-        write!(f, "% max-recursion-depth: {}\n", config.max_recursion_depth)?;
-        write!(f, "% disable-shadowing: {}\n", config.disable_shadowing)?;
-        write!(f, "% disable-maybe: {}\n", config.disable_maybe)?;
-        write!(f, "% deterministic: {}\n", config.deterministic)?;
-        write!(f, "% wrapper: {}\n", config.wrapper_mode)?;
+        write!(
+            f,
+            "% To reduce:\n% erlfuzz --max-size {} --max-recursion-depth {} {}{}{}{}{}reduce --seed {} {}\n",
+            config.max_size,
+            config.max_recursion_depth,
+            if config.disable_shadowing {
+                "--disable-shadowing "
+            } else {
+                ""
+            },
+            if config.disable_maybe {
+                "--disable-maybe "
+            } else {
+                ""
+            },
+            if config.disable_map_comprehensions {
+                "--disable-map-comprehensions "
+            } else {
+                ""
+            },
+            if config.deterministic {
+                "--deterministic "
+            } else {
+                ""
+            },
+            match config.wrapper_mode {
+                WrapperMode::Default => "",
+                WrapperMode::Printing => "--wrapper printing ",
+                WrapperMode::ForInfer => "--wrapper for-infer ",
+            },
+            self.initial_seed,
+            self.module_name,
+        )?;
+        write!(
+            f,
+            "% then complete with `--tmp-directory <OUT> --minimized-directory <MINIMIZED> --command <COMMAND>` where command is the script that you used (e.g. ./verify_erlc_opts.sh)\n"
+        )?;
         if !config.disable_maybe {
             write!(f, "-feature(maybe_expr, enable).\n")?;
         }
