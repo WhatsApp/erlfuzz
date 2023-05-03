@@ -100,12 +100,17 @@ struct Cli {
     max_size: erlfuzz::ASTSize,
     #[clap(long, value_parser, default_value_t = DEFAULT_MAX_RECURSION_ALLOWED)]
     max_recursion_depth: u16,
+    /// Do not generate code which makes use of name shadowing
     #[clap(long, value_parser, default_value_t = false)]
     disable_shadowing: bool,
+    /// Do not generate code which makes use of maybe-expressions
     #[clap(long, value_parser, default_value_t = false)]
     disable_maybe: bool,
+    /// Do not generate code which makes use of map comprehensions
     #[clap(long, value_parser, default_value_t = false)]
     disable_map_comprehensions: bool,
+    /// Whether to generate code which may evaluate differently on different runs,
+    /// for example, code which makes use of pids, references and ports.
     #[clap(long, value_parser, default_value_t = false)]
     deterministic: bool,
 }
