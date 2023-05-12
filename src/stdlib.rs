@@ -65,7 +65,7 @@ pub const ERLANG_FUNCTIONS: &[(
     ("erase", AnyDeterminism, NotInGuard, Local, List, &[]), // [{Any, Any}]
     ("erase", DeterministicOnly, NotInGuard, Local, Any, &[Any]), // Value | undefined
     // error, exit
-    ("external_size", DeterministicOnly, NotInGuard, Remote, Integer, &[Any]),
+    ("external_size", AnyDeterminism, NotInGuard, Remote, Integer, &[Any]),
     // ("external_size", DeterministicOnly, NotInGuard, Remote, Integer, &[Any, List]),
     ("float", DeterministicOnly, InGuard, Local, Float, &[Number]),
     ("float_to_binary", DeterministicOnly, NotInGuard, Local, Bitstring, &[Float]),
