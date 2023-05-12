@@ -40,7 +40,7 @@ pub const ERLANG_FUNCTIONS: &[(
     ("binary_part", DeterministicOnly, InGuard, Local, Bitstring, &[Bitstring, Integer, Integer]),
     ("binary_to_atom", DeterministicOnly, NotInGuard, Local, Atom, &[Bitstring]),
     // ("binary_to_atom", DeterministicOnly, NotInGuard, Local, Atom, &[Bitstring, Atom]),
-    ("binary_to_existing_atom", DeterministicOnly, NotInGuard, Local, Atom, &[Bitstring]),
+    ("binary_to_existing_atom", AnyDeterminism, NotInGuard, Local, Atom, &[Bitstring]),
     // ("binary_to_existing_atom", DeterministicOnly, NotInGuard, Local, Atom, &[Bitstring, Atom]),
     ("binary_to_float", DeterministicOnly, NotInGuard, Local, Float, &[Bitstring]),
     ("binary_to_integer", DeterministicOnly, NotInGuard, Local, Integer, &[Bitstring]),
