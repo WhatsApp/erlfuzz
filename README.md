@@ -204,6 +204,10 @@ erlc:
 - https://github.com/erlang/otp/issues/7180
 - https://github.com/erlang/otp/pull/7207
 - https://github.com/erlang/otp/pull/7222
+- https://github.com/erlang/otp/issues/7248
+- https://github.com/erlang/otp/issues/7251
+- https://github.com/erlang/otp/issues/7252
+- https://github.com/erlang/otp/pull/7271
 
 dialyzer:
 - https://github.com/erlang/otp/issues/6419
