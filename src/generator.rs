@@ -92,6 +92,7 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
                 arity,
                 clauses: Vec::new(),
                 clause_types,
+                exported: rng.gen::<bool>(),
             });
         }
     }
@@ -244,6 +245,7 @@ fn make_trivial_function_from_body(
         name,
         arity: 0,
         clause_types: Vec::new(),
+        exported: true,
     }
 }
 

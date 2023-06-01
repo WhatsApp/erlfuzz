@@ -824,6 +824,7 @@ pub struct FunctionDeclaration {
     pub clauses: Vec<FunctionClauseId>,
     pub name: String,
     pub arity: Arity,
+    pub exported: bool,
     pub clause_types: Vec<FunctionTypeApproximation>,
 }
 impl SizedAst for FunctionDeclaration {
@@ -895,7 +896,19 @@ impl fmt::Display for Module<'_> {
             write!(f, "-feature(maybe_expr, enable).\n")?;
         }
         write!(f, "-module({}).\n", self.module_name)?;
-        write!(f, "-compile([export_all]).")?;
+        write!(f, "-export([")?;
+        write_list_strings(
+            f,
+            self.functions.iter().filter_map(|f| {
+                if f.exported {
+                    Some(format!("{}/{}", f.name, f.arity))
+                } else {
+                    None
+                }
+            }),
+            ", ",
+        )?;
+        write!(f, "]).")?;
         for func_decl in &self.functions {
             write!(f, "\n\n")?;
             func_decl.fmt(self, f)?;
