@@ -132,6 +132,7 @@ BEAM VM:
 - https://github.com/erlang/otp/issues/6717
 - https://github.com/erlang/otp/pull/6838
 - https://github.com/erlang/otp/pull/6839
+- https://github.com/erlang/otp/pull/7282
 
 erlc:
 - https://github.com/erlang/otp/issues/6163
@@ -208,6 +209,7 @@ erlc:
 - https://github.com/erlang/otp/issues/7251
 - https://github.com/erlang/otp/issues/7252
 - https://github.com/erlang/otp/pull/7271
+- https://github.com/erlang/otp/pull/7283
 
 dialyzer:
 - https://github.com/erlang/otp/issues/6419
