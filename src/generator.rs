@@ -87,12 +87,15 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
         for arity in arities {
             let num_clauses: usize = if arity > 0 { rng.gen_range(1..=5) } else { 1 };
             let clause_types = make_vec(num_clauses, || gen_clause_type(&mut rng, arity));
+            let function_type = join_function_types(&clause_types);
             bound_functions.push(FunctionDeclaration {
                 name: name.clone(),
                 arity,
                 clauses: Vec::new(),
                 clause_types,
+                function_type,
                 exported: rng.gen::<bool>(),
+                visible_spec: rng.gen::<bool>(),
             });
         }
     }
@@ -240,12 +243,18 @@ fn make_trivial_function_from_body(
         guard,
         body,
     });
+    let function_type = FunctionTypeApproximation {
+        return_type: Any,
+        arg_types: Vec::new(),
+    };
     FunctionDeclaration {
         clauses: vec![clause_id],
         name,
         arity: 0,
-        clause_types: Vec::new(),
+        clause_types: vec![function_type.clone()],
+        function_type,
         exported: true,
+        visible_spec: false,
     }
 }
 

@@ -4,6 +4,7 @@
  * the LICENSE file in the root directory of this source tree.
  */
 
+use std::fmt;
 use std::iter::zip;
 
 use TypeApproximation::*;
@@ -44,6 +45,31 @@ impl TypeApproximation {
         } else {
             *self = Bottom;
         }
+    }
+}
+impl fmt::Display for TypeApproximation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Any => "term()",
+                Integer => "integer()",
+                Float => "float()",
+                Number => "number()",
+                Tuple => "tuple()",
+                Atom => "atom()",
+                List => "list()",
+                Boolean => "boolean()",
+                Map => "map()",
+                Bitstring => "bitstring()",
+                Fun => "fun()",
+                Pid => "pid()",
+                Port => "port()",
+                Ref => "reference()",
+                Bottom => "none()",
+            }
+        )
     }
 }
 

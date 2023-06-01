@@ -117,6 +117,18 @@ fn reduce_func_decl<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, func_d
             |m: &mut Module| m.functions[func_decl_id].clauses.insert(i, clause_id),
         );
     }
+
+    if module.functions[func_decl_id].visible_spec {
+        module.functions[func_decl_id].visible_spec = false;
+        let _ = try_reduction_or_else(
+            module,
+            run,
+            0,
+            "eliminating a function spec",
+            |m: &mut Module| m.functions[func_decl_id].visible_spec = true,
+        );
+    }
+
     // TODO: I don't think this clone() should be required, but I can't get the borrow checker to understand it.
     let clause_ids = module.functions[func_decl_id].clauses.clone();
     for clause_id in clause_ids {

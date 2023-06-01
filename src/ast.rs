@@ -826,6 +826,8 @@ pub struct FunctionDeclaration {
     pub arity: Arity,
     pub exported: bool,
     pub clause_types: Vec<FunctionTypeApproximation>,
+    pub function_type: FunctionTypeApproximation,
+    pub visible_spec: bool,
 }
 impl SizedAst for FunctionDeclaration {
     fn size(&self, module: &Module) -> ASTSize {
@@ -834,6 +836,15 @@ impl SizedAst for FunctionDeclaration {
 }
 impl AstNode for FunctionDeclaration {
     fn fmt(&self, m: &Module, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.visible_spec {
+            write!(f, "-spec {}(", &self.name)?;
+            write_list_strings(
+                f,
+                self.function_type.arg_types.iter().map(|t| t.to_string()),
+                ", ",
+            )?;
+            write!(f, ") -> {}.\n", &self.function_type.return_type)?;
+        }
         write_list_ast_nodes(f, m, &self.clauses, ";\n")?;
         write!(f, ".")
     }

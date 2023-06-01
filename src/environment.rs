@@ -221,11 +221,13 @@ impl Environment {
             .iter()
             .map(
                 |FunctionDeclaration {
-                     name, clause_types, ..
+                     name,
+                     function_type,
+                     ..
                  }| FunctionInformation {
                     name: name.to_string(),
                     module_name: "?MODULE".to_string(),
-                    t: join_function_types(clause_types),
+                    t: function_type.clone(),
                     determinism: DeterministicOnly,
                     guard_context: NotInGuard,
                     call_locality: Local,
