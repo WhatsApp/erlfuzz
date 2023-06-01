@@ -135,12 +135,12 @@ pub const ERLANG_FUNCTIONS: &[(
     // make_tuple/3, map_get
     ("map_size", DeterministicOnly, InGuard, Local, Integer, &[Map]),
     // match_spec_test
-    ("max", DeterministicOnly, NotInGuard, Local, Any, &[Any, Any]),
+    ("max", DeterministicOnly, InGuard, Local, Any, &[Any, Any]),
     ("md5", DeterministicOnly, NotInGuard, Remote, Bitstring, &[Bitstring]), // actually takes an iolist
     // various incremental md5 functions
     ("memory", AnyDeterminism, NotInGuard, Remote, List, &[]),
     // memory/1
-    ("min", DeterministicOnly, NotInGuard, Local, Any, &[Any, Any]),
+    ("min", DeterministicOnly, InGuard, Local, Any, &[Any, Any]),
     // module_loaded, monitor, monitor_node
     ("monotonic_time", AnyDeterminism, NotInGuard, Remote, Integer, &[]),
     // monotonic_time/1, nif_error
