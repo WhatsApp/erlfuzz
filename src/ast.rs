@@ -214,7 +214,7 @@ pub enum Expr {
     Catch(ExprId),
     BinaryOperation(BinaryOperator, ExprId, ExprId),
     UnaryOperation(UnaryOperator, ExprId),
-    Case(ExprId, Vec<(PatternId, GuardSeqId, BodyId)>),
+    Case(ExprId, Vec<(PatternId, GuardId, BodyId)>),
     Assignment(PatternId, ExprId),
     MapLiteral(Vec<(ExprId, ExprId)>),
     MapInsertion(ExprId, ExprId, ExprId),
@@ -224,14 +224,14 @@ pub enum Expr {
     Comprehension(ComprehensionKind, ExprId, Vec<ComprehensionElement>),
     MapComprehension(ExprId, ExprId, Vec<ComprehensionElement>),
     Try(
-        BodyId,                                       // Exprs
-        Option<Vec<(PatternId, GuardSeqId, BodyId)>>, // "of" section
-        Option<Vec<(PatternId, GuardSeqId, BodyId)>>, // "catch" section
-        Option<BodyId>,                               // "after" section
+        BodyId,                                    // Exprs
+        Option<Vec<(PatternId, GuardId, BodyId)>>, // "of" section
+        Option<Vec<(PatternId, GuardId, BodyId)>>, // "catch" section
+        Option<BodyId>,                            // "after" section
     ),
     Maybe(
         Vec<MaybeExpr>,
-        Option<Vec<(PatternId, GuardSeqId, BodyId)>>, // "else" section
+        Option<Vec<(PatternId, GuardId, BodyId)>>, // "else" section
     ),
     Block(BodyId),
 }
@@ -772,19 +772,19 @@ impl AstNode for Pattern {
 }
 
 #[derive(Debug, Default)]
-pub struct GuardSeq {
-    pub guards: Vec<ExprId>,
+pub struct Guard {
+    pub guard_seqs: Vec<GuardSeqId>,
 }
-impl SizedAst for GuardSeq {
+impl SizedAst for Guard {
     fn size(&self, module: &Module) -> ASTSize {
-        self.guards.size(module)
+        self.guard_seqs.size(module)
     }
 }
-impl AstNode for GuardSeq {
+impl AstNode for Guard {
     fn fmt(&self, m: &Module, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if !self.guards.is_empty() {
+        if !self.guard_seqs.is_empty() {
             write!(f, " when ")?;
-            write_list_ast_nodes(f, m, &self.guards, "; ")
+            write_list_ast_nodes(f, m, &self.guard_seqs, "; ")
         } else {
             Ok(())
         }
@@ -792,10 +792,25 @@ impl AstNode for GuardSeq {
 }
 
 #[derive(Debug)]
+pub struct GuardSeq {
+    pub guard_exprs: Vec<ExprId>,
+}
+impl SizedAst for GuardSeq {
+    fn size(&self, module: &Module) -> ASTSize {
+        self.guard_exprs.size(module)
+    }
+}
+impl AstNode for GuardSeq {
+    fn fmt(&self, m: &Module, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_list_ast_nodes(f, m, &self.guard_exprs, ", ")
+    }
+}
+
+#[derive(Debug)]
 pub struct FunctionClause {
     pub name: String,
     pub args: Vec<PatternId>,
-    pub guard: GuardSeqId,
+    pub guard: GuardId,
     pub body: BodyId,
 }
 impl SizedAst for FunctionClause {
@@ -862,6 +877,7 @@ pub struct Module<'a> {
     function_clauses: Vec<FunctionClause>,
     bodies: Vec<Body>,
     guard_seqs: Vec<GuardSeq>,
+    guards: Vec<Guard>,
 }
 impl fmt::Display for Module<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -945,6 +961,7 @@ impl<'a> Module<'a> {
             function_clauses: Vec::new(),
             bodies: Vec::new(),
             guard_seqs: Vec::new(),
+            guards: Vec::new(),
         }
     }
     pub fn expr(&self, id: ExprId) -> &Expr {
@@ -1005,6 +1022,16 @@ impl<'a> Module<'a> {
         self.guard_seqs.push(p);
         GuardSeqId((self.guard_seqs.len() - 1).try_into().unwrap())
     }
+    pub fn guard(&self, id: GuardId) -> &Guard {
+        &self.guards[id.0 as usize]
+    }
+    pub fn guard_mut(&mut self, id: GuardId) -> &mut Guard {
+        &mut self.guards[id.0 as usize]
+    }
+    pub fn add_guard(&mut self, p: Guard) -> GuardId {
+        self.guards.push(p);
+        GuardId((self.guards.len() - 1).try_into().unwrap())
+    }
 }
 
 pub trait NodeId {
@@ -1055,6 +1082,15 @@ impl NodeId for BodyId {
     type Node = Body;
     fn get<'a>(&self, module: &'a Module) -> &'a Self::Node {
         module.body(*self)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct GuardId(u32);
+impl NodeId for GuardId {
+    type Node = Guard;
+    fn get<'a>(&self, module: &'a Module) -> &'a Self::Node {
+        module.guard(*self)
     }
 }
 

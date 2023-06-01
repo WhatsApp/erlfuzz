@@ -72,7 +72,7 @@ fn try_trivialize_func_decl<F: Fn(&Module) -> bool>(
     let body = module.add_body(Body {
         exprs: vec![ok_expr],
     });
-    let guard = module.add_guard_seq(GuardSeq::default());
+    let guard = module.add_guard(Guard::default());
     let args = make_vec(arity, || module.add_pattern(Pattern::Underscore()));
     let trivial_clause_id = module.add_function_clause(FunctionClause {
         name,
@@ -149,7 +149,7 @@ fn reduce_clause<F: Fn(&Module) -> bool>(
     );
 
     // We reduce the guards and body before the arguments to minimize the number of variables that the arguments have to bind.
-    reduce_guard_seq(module, run, module.function_clause(clause_id).guard);
+    reduce_guard(module, run, module.function_clause(clause_id).guard);
     reduce_body(module, run, module.function_clause(clause_id).body);
 
     // TODO: I don't think this clone() should be required, but I can't get the borrow checker to understand it.
@@ -159,27 +159,51 @@ fn reduce_clause<F: Fn(&Module) -> bool>(
     }
 }
 
+fn reduce_guard<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, guard_id: GuardId) {
+    let num_guard_seqs = module.guard(guard_id).guard_seqs.len();
+    for i in (0..num_guard_seqs).rev() {
+        let guard_seq_id = module.guard_mut(guard_id).guard_seqs.remove(i);
+        let _ = try_reduction_or_else(
+            module,
+            run,
+            module.guard_seq(guard_seq_id).size(module),
+            "eliminating a guard sequence",
+            |m: &mut Module| m.guard_mut(guard_id).guard_seqs.insert(i, guard_seq_id),
+        );
+    }
+
+    // TODO: I don't think this clone() should be required, but I can't get the borrow checker to understand it.
+    let guard_seqs = module.guard(guard_id).guard_seqs.clone();
+    for guard_seq_id in guard_seqs {
+        reduce_guard_seq(module, run, guard_seq_id);
+    }
+}
+
 fn reduce_guard_seq<F: Fn(&Module) -> bool>(
     module: &mut Module,
     run: &F,
     guard_seq_id: GuardSeqId,
 ) {
-    let num_guards = module.guard_seq(guard_seq_id).guards.len();
-    for i in (0..num_guards).rev() {
-        let expr_id = module.guard_seq_mut(guard_seq_id).guards.remove(i);
+    let num_guard_exprs = module.guard_seq(guard_seq_id).guard_exprs.len();
+    for i in (0..num_guard_exprs).rev() {
+        // Avoid eliminating the last expression of a guard sequence.
+        if module.guard_seq(guard_seq_id).guard_exprs.len() == 1 {
+            break;
+        }
+        let expr_id = module.guard_seq_mut(guard_seq_id).guard_exprs.remove(i);
         let _ = try_reduction_or_else(
             module,
             run,
             module.expr(expr_id).size(module),
-            "eliminating a guard",
-            |m: &mut Module| m.guard_seq_mut(guard_seq_id).guards.insert(i, expr_id),
+            "eliminating a guard expression",
+            |m: &mut Module| m.guard_seq_mut(guard_seq_id).guard_exprs.insert(i, expr_id),
         );
     }
 
     // TODO: I don't think this clone() should be required, but I can't get the borrow checker to understand it.
-    let guards = module.guard_seq(guard_seq_id).guards.clone();
-    for expr_id in guards {
-        reduce_expr(module, run, expr_id);
+    let guard_exprs = module.guard_seq(guard_seq_id).guard_exprs.clone();
+    for guard_expr_id in guard_exprs {
+        reduce_expr(module, run, guard_expr_id);
     }
 }
 
@@ -573,7 +597,7 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
             // TODO: replace by a tuple with all the bodies?
             // Very tricky as the patterns can bind variables
             for (p, g, b) in cases.iter() {
-                reduce_guard_seq(module, run, *g);
+                reduce_guard(module, run, *g);
                 reduce_body(module, run, *b);
                 reduce_pattern(module, run, *p);
             }
@@ -584,8 +608,8 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                 let (p, g, b) = cases[0];
                 if let Pattern::Underscore() = module.pattern(p) {
                     let Body { exprs, .. } = module.body(b);
-                    let GuardSeq { guards, .. } = module.guard_seq(g);
-                    if exprs.len() == 1 && guards.len() == 0 {
+                    let Guard { guard_seqs, .. } = module.guard(g);
+                    if exprs.len() == 1 && guard_seqs.len() == 0 {
                         let new_expr = module.expr(exprs[0]).clone();
                         let _ = try_replace_expr(
                             module,
@@ -771,8 +795,8 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
             if clauses.len() == 1 {
                 let FunctionClause { guard, body, .. } = module.function_clause(clauses[0]);
                 let Body { exprs, .. } = module.body(*body);
-                let GuardSeq { guards, .. } = module.guard_seq(*guard);
-                if exprs.len() == 1 && guards.len() == 0 {
+                let Guard { guard_seqs, .. } = module.guard(*guard);
+                if exprs.len() == 1 && guard_seqs.len() == 0 {
                     let new_expr = module.expr(exprs[0]).clone();
                     let _ = try_replace_expr(
                         module,
@@ -868,7 +892,7 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                     }
                 }
                 for (p, g, b) in of_cases.iter() {
-                    reduce_guard_seq(module, run, *g);
+                    reduce_guard(module, run, *g);
                     reduce_body(module, run, *b);
                     reduce_pattern(module, run, *p);
                 }
@@ -879,7 +903,7 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
 
             if let Some(catch_cases) = catch {
                 for (p, g, b) in catch_cases.iter() {
-                    reduce_guard_seq(module, run, *g);
+                    reduce_guard(module, run, *g);
                     reduce_body(module, run, *b);
                     reduce_pattern(module, run, *p);
                 }
@@ -912,7 +936,7 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                         return recurse_expr(module, run, expr_id);
                     }
                     for (p, g, b) in else_cases.iter() {
-                        reduce_guard_seq(module, run, *g);
+                        reduce_guard(module, run, *g);
                         reduce_body(module, run, *b);
                         reduce_pattern(module, run, *p);
                     }

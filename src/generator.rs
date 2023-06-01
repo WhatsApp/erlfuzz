@@ -204,11 +204,11 @@ fn gen_wrapper_function<RngType: rand::Rng>(
             let p_exit = module.add_pattern(Pattern::Atom("'EXIT'".to_string()));
             let p_underscore = module.add_pattern(Pattern::Underscore());
             let p1 = module.add_pattern(Pattern::Tuple(vec![p_exit, p_underscore]));
-            let g1 = module.add_guard_seq(GuardSeq::default());
+            let g1 = module.add_guard(Guard::default());
             let e1 = module.add_expr(Expr::Atom("'EXIT'".to_string()), Atom);
             let b1 = module.add_body(Body { exprs: vec![e1] });
             let p_default = module.add_pattern(Pattern::NamedVar(1));
-            let g2 = module.add_guard_seq(GuardSeq::default());
+            let g2 = module.add_guard(Guard::default());
             let e_default = module.add_expr(Expr::Var(1), Any);
             let b2 = module.add_body(Body {
                 exprs: vec![e_default],
@@ -236,7 +236,7 @@ fn make_trivial_function_from_body(
     body: BodyId,
     name: String,
 ) -> FunctionDeclaration {
-    let guard = module.add_guard_seq(GuardSeq { guards: Vec::new() });
+    let guard = module.add_guard(Guard::default());
     let clause_id = module.add_function_clause(FunctionClause {
         name: name.clone(),
         args: Vec::new(),
@@ -331,7 +331,7 @@ fn gen_function_clause<RngType: rand::Rng>(
         )
     });
 
-    let guard = gen_guard_seq(
+    let guard = gen_guard(
         rng,
         module,
         ctx.for_recursion_with_spent_size(size).with_type(Boolean),
@@ -1355,7 +1355,7 @@ fn gen_cases<RngType: rand::Rng>(
     ctx: Context,
     env: &mut Environment,
     current_node_size: &mut ASTSize,
-) -> Vec<(PatternId, GuardSeqId, BodyId)> {
+) -> Vec<(PatternId, GuardId, BodyId)> {
     let random_arity = choose_arity(rng);
     let arity = if random_arity > 0 { random_arity } else { 1 };
     let cases = env.with_multi_scope_auto(
@@ -1366,7 +1366,7 @@ fn gen_cases<RngType: rand::Rng>(
         arity,
         |env, _| {
             let pattern = recurse_any_pattern(t, rng, m, ctx, env, current_node_size);
-            let guard_seq = gen_guard_seq(
+            let guard = gen_guard(
                 rng,
                 m,
                 ctx.with_type(Boolean)
@@ -1381,7 +1381,7 @@ fn gen_cases<RngType: rand::Rng>(
                 env,
                 current_node_size,
             );
-            (pattern, guard_seq, body)
+            (pattern, guard, body)
         },
     );
     cases
@@ -1406,23 +1406,33 @@ fn gen_body<RngType: rand::Rng>(
     module.add_body(Body { exprs: es })
 }
 
-fn gen_guard_seq<RngType: rand::Rng>(
+fn gen_guard<RngType: rand::Rng>(
     rng: &mut RngType,
     module: &mut Module,
     ctx_arg: Context,
     env: &mut Environment,
     size_to_incr: &mut ASTSize,
-) -> GuardSeqId {
+) -> GuardId {
     assert!(ctx_arg.expected_type == Boolean);
     let ctx = ctx_arg.in_guard();
-    let mut guards = Vec::new();
+    let mut guard_seqs = Vec::new();
     let mut size = 1;
+    // A guard is made of 0 or more guard sequences.
     while size < ctx.allowed_size && rng.gen::<bool>() {
-        let e = recurse_any_expr(Boolean, rng, module, ctx, env, &mut size);
-        guards.push(e);
+        let mut guard_exprs = Vec::new();
+        // And a guard sequence is made of 1 or more expressions.
+        loop {
+            let e = recurse_any_expr(Boolean, rng, module, ctx, env, &mut size);
+            guard_exprs.push(e);
+            if size >= ctx.allowed_size || rng.gen::<bool>() {
+                break;
+            }
+        }
+        let guard_seq_id = module.add_guard_seq(GuardSeq { guard_exprs });
+        guard_seqs.push(guard_seq_id);
     }
     *size_to_incr += size;
-    module.add_guard_seq(GuardSeq { guards })
+    module.add_guard(Guard { guard_seqs })
 }
 
 #[derive(Copy, Clone, Debug)]
