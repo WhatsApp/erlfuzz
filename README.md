@@ -39,7 +39,6 @@ I recommend running this in a window controlled by `tmux`, `screen`, etc., so it
 There are similar scripts for fuzzing other tools such as `erlfmt`, `dialyzer`, or `eqwalizer`.
 For some of these, it may be required to pass additional options to `erlfuzz`:
 - `run_eqwalizer_once.sh`:
-   - `--disable-map-comprehensions`
    - `--disable-maybe`
    - `--disable-shadowing`
 - `run_erlfmt_once.sh`:
