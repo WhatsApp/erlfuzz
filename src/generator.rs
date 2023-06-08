@@ -172,11 +172,11 @@ fn gen_start_function<RngType: rand::Rng>(
 
 // Calls a given function exactly once
 // ForInfer => nothing around the call, e.g. f0(a, b)
-// Printing => io:write + catch + some code to remove details of exceptions
-//   e.g. io:write(case catch f0(a, b) of
+// Printing => io:format + catch + some code to remove details of exceptions
+//   e.g. io:format("~kp", [case catch f0(a, b) of
 //     {'EXIT', _} -> 'EXIT';
 //     _V1 -> _V1
-//   end)
+//   end])
 //   This removal of stacktraces is required because they are imprecise in interpreter mode for badarith
 //   , see https://github.com/erlang/otp/issues/6697#issuecomment-1385608959
 //   I've also found exceptions imprecise in other cases, for example in case of <<3.14/integer, 0.123/utf8>>,
@@ -217,8 +217,14 @@ fn gen_wrapper_function<RngType: rand::Rng>(
                 Expr::Case(catch_expr, vec![(p1, g1, b1), (p_default, g2, b2)]),
                 Any,
             );
+            let list_expr = module.add_expr(Expr::List(vec![case_expr]), List);
+            let format_literal = module.add_expr(Expr::String("~kp".to_string()), List);
             module.add_expr(
-                Expr::RemoteCall("io".to_string(), "write".to_string(), vec![case_expr]),
+                Expr::RemoteCall(
+                    "io".to_string(),
+                    "format".to_string(),
+                    vec![format_literal, list_expr],
+                ),
                 Any,
             )
         }
