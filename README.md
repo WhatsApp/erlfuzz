@@ -41,6 +41,9 @@ For some of these, it may be required to pass additional options to `erlfuzz`:
 - `run_eqwalizer_once.sh`:
    - `--disable-maybe`
    - `--disable-shadowing`
+- `run_gradualizer_once.sh`:
+  - `--disable-map-comprehensions`
+  - `--disable-maybe`
 - `run_erlfmt_once.sh`:
    - `--disable-map-comprehensions`
    - `--disable-maybe`
@@ -233,3 +236,9 @@ eqWAlizer:
 inferl:
 - https://github.com/facebook/infer/commit/dbdcf4863ee2751a6b671f072850b29b4916bf5b
 - https://github.com/facebook/infer/commit/5453911ea7a69dfb66f2cb697976eeeb9c30b176
+
+Gradualizer
+- https://github.com/josefs/Gradualizer/issues/542
+- https://github.com/josefs/Gradualizer/issues/543
+- https://github.com/josefs/Gradualizer/issues/544
+- https://github.com/josefs/Gradualizer/issues/545
