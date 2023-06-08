@@ -211,6 +211,7 @@ pub enum Expr {
     LocalCall(String, Vec<ExprId>),
     RemoteCall(String, String, Vec<ExprId>),
     Tuple(Vec<ExprId>),
+    List(Vec<ExprId>),
     Catch(ExprId),
     BinaryOperation(BinaryOperator, ExprId, ExprId),
     UnaryOperation(UnaryOperator, ExprId),
@@ -239,7 +240,7 @@ impl SizedAst for Expr {
     fn size(&self, module: &Module) -> ASTSize {
         match self {
             Expr::LocalCall(_, args) | Expr::RemoteCall(_, _, args) => 1 + args.size(module),
-            Expr::Tuple(elements) => 1 + elements.size(module),
+            Expr::Tuple(elements) | Expr::List(elements) => 1 + elements.size(module),
             Expr::Catch(e) => 1 + e.size(module),
             Expr::BinaryOperation(_, e1, e2) => 1 + e1.size(module) + e2.size(module),
             Expr::UnaryOperation(_, e) => e.size(module),
@@ -295,6 +296,11 @@ impl AstNode for Expr {
                 write!(f, "{{")?;
                 write_list_ast_nodes(f, m, es, ", ")?;
                 write!(f, "}}")
+            }
+            Expr::List(es) => {
+                write!(f, "[")?;
+                write_list_ast_nodes(f, m, es, ", ")?;
+                write!(f, "]")
             }
             Expr::Catch(e) => write!(f, "(catch {})", with_module(*e, m)),
             Expr::BinaryOperation(op, e1, e2) => {

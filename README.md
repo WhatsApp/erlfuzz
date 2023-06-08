@@ -195,7 +195,6 @@ erlc:
 - https://github.com/erlang/otp/issues/7168
 - https://github.com/erlang/otp/issues/7170
 - https://github.com/erlang/otp/issues/7171
-- https://github.com/erlang/otp/commit/4e02a5789faebd31bdb6af101fad442316367c96
 - https://github.com/erlang/otp/issues/7178
 - https://github.com/erlang/otp/issues/7179
 - https://github.com/erlang/otp/issues/7180
@@ -207,6 +206,9 @@ erlc:
 - https://github.com/erlang/otp/pull/7271
 - https://github.com/erlang/otp/pull/7283
 - https://github.com/erlang/otp/pull/7281#issuecomment-1562404185
+- https://github.com/erlang/otp/pull/7340
+- https://github.com/erlang/otp/issues/7354
+- https://github.com/erlang/otp/issues/7370
 
 dialyzer:
 - https://github.com/erlang/otp/issues/6419

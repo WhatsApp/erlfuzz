@@ -501,6 +501,37 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                 reduce_expr(module, run, *sub_expr_id);
             }
         }
+        Expr::List(ref mut args) => {
+            // FIXME: abstract away the following pattern:
+            for i in (0..args.len()).rev() {
+                let e = args.remove(i);
+                if try_replace_expr(
+                    module,
+                    run,
+                    expr_id,
+                    "eliminating an element of a list",
+                    || Expr::List(args.clone()),
+                ) {
+                    continue;
+                }
+                args.insert(i, e);
+            }
+            if args.len() == 1 {
+                let new_expr = module.expr(args[0]).clone();
+                if try_replace_expr(
+                    module,
+                    run,
+                    expr_id,
+                    "replacing a list with a single element by this element",
+                    || new_expr,
+                ) {
+                    return recurse_expr(module, run, expr_id);
+                }
+            }
+            for sub_expr_id in args {
+                reduce_expr(module, run, *sub_expr_id);
+            }
+        }
         Expr::Catch(e) => {
             let new_expr = module.expr(e).clone();
             if try_replace_expr(

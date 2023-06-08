@@ -605,6 +605,7 @@ enum ExprKind {
     LocalCall,
     RemoteCall,
     Tuple,
+    List,
     Catch,
     Comparison,
     UnaryIntegerBNot,
@@ -650,6 +651,7 @@ const ALL_EXPR_KINDS: &[ExprKind] = &[
     ExprKind::LocalCall,
     ExprKind::RemoteCall,
     ExprKind::Tuple,
+    ExprKind::List,
     ExprKind::Catch,
     ExprKind::Comparison,
     ExprKind::UnaryIntegerBNot,
@@ -688,6 +690,7 @@ fn expr_kind_weight(kind: ExprKind) -> u32 {
         ExprKind::LocalCall => 3,
         ExprKind::RemoteCall => 2,
         ExprKind::Tuple => 3,
+        ExprKind::List => 1,
         ExprKind::Catch => 1,
         ExprKind::Comparison => 3,
         ExprKind::UnaryIntegerBNot => 1,
@@ -727,6 +730,7 @@ fn is_expr_kind_allowed_by_context(kind: ExprKind, ctx: Context) -> bool {
         ExprKind::LocalCall => ctx.may_recurse(), // allowed in guards because of bifs
         ExprKind::RemoteCall => ctx.may_recurse() && !ctx.is_in_guard,
         ExprKind::Tuple => ctx.may_recurse() && ctx.allows_type(Tuple),
+        ExprKind::List => ctx.may_recurse() && ctx.allows_type(List),
         // stacktraces are imprecise in interpreter mode, and captured by catch
         ExprKind::Catch => ctx.may_recurse() && !ctx.is_in_guard && !ctx.deterministic,
         ExprKind::Comparison => ctx.may_recurse() && ctx.allows_type(Boolean),
@@ -917,6 +921,18 @@ fn gen_expr<RngType: rand::Rng>(
                 |env, _| recurse_any_expr(Any, rng, m, ctx, env, &mut size),
             );
             m.add_expr(Expr::Tuple(args), Tuple)
+        }
+        ExprKind::List => {
+            let arity = choose_arity(rng);
+            let args = env.with_multi_scope_auto(
+                MultiScopeKind::Expr,
+                NoShadowing,
+                NotSafeToReuse,
+                KeepUnion,
+                arity,
+                |env, _| recurse_any_expr(Any, rng, m, ctx, env, &mut size),
+            );
+            m.add_expr(Expr::List(args), List)
         }
         ExprKind::Case => {
             let e = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
