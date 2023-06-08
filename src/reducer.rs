@@ -258,6 +258,11 @@ fn try_replace_pattern<PatternGenerator: FnOnce() -> Pattern, CheckModule: Fn(&M
 }
 
 fn recurse_pattern<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, pattern_id: PatternId) {
+    macro_rules! try_replace_pattern {
+        ( $descr:expr, $replacement:expr ) => {
+            try_replace_pattern(module, run, pattern_id, $descr, $replacement)
+        };
+    }
     match module.pattern(pattern_id).clone() {
         Pattern::Nil()
         | Pattern::Atom(_)
@@ -267,22 +272,16 @@ fn recurse_pattern<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, pattern
         | Pattern::NamedVar(_) => (),
         Pattern::EqualPatterns(p1_id, p2_id) => {
             let p1 = module.pattern(p1_id).clone();
-            if try_replace_pattern(
-                module,
-                run,
-                pattern_id,
+            if try_replace_pattern!(
                 "replacing a pattern equality by the left-side pattern",
-                || p1,
+                || p1
             ) {
                 return recurse_pattern(module, run, pattern_id);
             }
             let p2 = module.pattern(p2_id).clone();
-            if try_replace_pattern(
-                module,
-                run,
-                pattern_id,
+            if try_replace_pattern!(
                 "replacing a pattern equality by the right-side pattern",
-                || p2,
+                || p2
             ) {
                 return recurse_pattern(module, run, pattern_id);
             }
@@ -292,25 +291,18 @@ fn recurse_pattern<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, pattern
         Pattern::Tuple(ref mut args) => {
             for i in (0..args.len()).rev() {
                 let p = args.remove(i);
-                if try_replace_pattern(
-                    module,
-                    run,
-                    pattern_id,
-                    "eliminating an element of a tuple pattern",
-                    || Pattern::Tuple(args.clone()),
-                ) {
+                if try_replace_pattern!("eliminating an element of a tuple pattern", || {
+                    Pattern::Tuple(args.clone())
+                }) {
                     continue;
                 }
                 args.insert(i, p);
             }
             if args.len() == 1 {
                 let new_pattern = module.pattern(args[0]).clone();
-                if try_replace_pattern(
-                    module,
-                    run,
-                    pattern_id,
+                if try_replace_pattern!(
                     "replacing a tuple pattern with a single element by this element",
-                    || new_pattern,
+                    || new_pattern
                 ) {
                     return recurse_pattern(module, run, pattern_id);
                 }
@@ -321,23 +313,11 @@ fn recurse_pattern<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, pattern
         }
         Pattern::List(p1_id, p2_id) => {
             let p1 = module.pattern(p1_id).clone();
-            if try_replace_pattern(
-                module,
-                run,
-                pattern_id,
-                "replacing a list pattern by the head pattern",
-                || p1,
-            ) {
+            if try_replace_pattern!("replacing a list pattern by the head pattern", || p1) {
                 return recurse_pattern(module, run, pattern_id);
             }
             let p2 = module.pattern(p2_id).clone();
-            if try_replace_pattern(
-                module,
-                run,
-                pattern_id,
-                "replacing a list pattern by the tail pattern",
-                || p2,
-            ) {
+            if try_replace_pattern!("replacing a list pattern by the tail pattern", || p2) {
                 return recurse_pattern(module, run, pattern_id);
             }
             reduce_pattern(module, run, p1_id);
@@ -347,13 +327,9 @@ fn recurse_pattern<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, pattern
             // TODO: add another reduction, that removes size/type-specifier.
             for i in (0..elements.len()).rev() {
                 let (v, s, ts) = elements.remove(i);
-                if try_replace_pattern(
-                    module,
-                    run,
-                    pattern_id,
-                    "eliminating an element of a bitstring match",
-                    || Pattern::Bitstring(elements.clone()),
-                ) {
+                if try_replace_pattern!("eliminating an element of a bitstring match", || {
+                    Pattern::Bitstring(elements.clone())
+                }) {
                     continue;
                 }
                 elements.insert(i, (v, s, ts));
@@ -370,26 +346,18 @@ fn recurse_pattern<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, pattern
         Pattern::Map(ref mut args) => {
             for i in (0..args.len()).rev() {
                 let (k, v) = args.remove(i);
-                if try_replace_pattern(
-                    module,
-                    run,
-                    pattern_id,
-                    "eliminating a pair of a map pattern",
-                    || Pattern::Map(args.clone()),
-                ) {
+                if try_replace_pattern!("eliminating a pair of a map pattern", || Pattern::Map(
+                    args.clone()
+                )) {
                     continue;
                 }
                 args.insert(i, (k, v));
             }
             if args.len() == 1 {
                 let new_pattern = module.pattern(args[0].1).clone();
-                if try_replace_pattern(
-                    module,
-                    run,
-                    pattern_id,
-                    "replacing a map pattern by the only pattern in it",
-                    || new_pattern,
-                ) {
+                if try_replace_pattern!("replacing a map pattern by the only pattern in it", || {
+                    new_pattern
+                }) {
                     return recurse_pattern(module, run, pattern_id);
                 }
             }
@@ -432,23 +400,19 @@ fn try_replace_expr<ExprGenerator: FnOnce() -> Expr, CheckModule: Fn(&Module) ->
 }
 
 fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: ExprId) {
+    macro_rules! try_replace_expr {
+        ( $descr:expr, $replacement:expr) => {
+            try_replace_expr(module, run, expr_id, $descr, $replacement)
+        };
+    }
     match module.expr(expr_id).clone() {
         Expr::String(_) => {
-            let _ = try_replace_expr(
-                module,
-                run,
-                expr_id,
-                "replacing a string literal by []",
-                || Expr::Nil(),
-            );
+            let _ = try_replace_expr!("replacing a string literal by []", || Expr::Nil());
         }
         Expr::LocalCall(_, ref args) => {
-            if try_replace_expr(
-                module,
-                run,
-                expr_id,
+            if try_replace_expr!(
                 "replacing a local function call by a tuple",
-                || Expr::Tuple(args.clone()),
+                || Expr::Tuple(args.clone())
             ) {
                 return recurse_expr(module, run, expr_id);
             }
@@ -457,13 +421,9 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
             }
         }
         Expr::RemoteCall(_, _, ref args) => {
-            if try_replace_expr(
-                module,
-                run,
-                expr_id,
-                "replacing a remote function call by a tuple",
-                || Expr::Tuple(args.clone()),
-            ) {
+            if try_replace_expr!("replacing a remote function call by a tuple", || {
+                Expr::Tuple(args.clone())
+            }) {
                 return recurse_expr(module, run, expr_id);
             }
             for sub_expr_id in args {
@@ -474,25 +434,18 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
             // FIXME: abstract away the following pattern:
             for i in (0..args.len()).rev() {
                 let e = args.remove(i);
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
-                    "eliminating an element of a tuple",
-                    || Expr::Tuple(args.clone()),
-                ) {
+                if try_replace_expr!("eliminating an element of a tuple", || Expr::Tuple(
+                    args.clone()
+                )) {
                     continue;
                 }
                 args.insert(i, e);
             }
             if args.len() == 1 {
                 let new_expr = module.expr(args[0]).clone();
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
+                if try_replace_expr!(
                     "replacing a tuple with a single element by this element",
-                    || new_expr,
+                    || new_expr
                 ) {
                     return recurse_expr(module, run, expr_id);
                 }
@@ -505,25 +458,18 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
             // FIXME: abstract away the following pattern:
             for i in (0..args.len()).rev() {
                 let e = args.remove(i);
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
-                    "eliminating an element of a list",
-                    || Expr::List(args.clone()),
-                ) {
+                if try_replace_expr!("eliminating an element of a list", || Expr::List(
+                    args.clone()
+                )) {
                     continue;
                 }
                 args.insert(i, e);
             }
             if args.len() == 1 {
                 let new_expr = module.expr(args[0]).clone();
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
+                if try_replace_expr!(
                     "replacing a list with a single element by this element",
-                    || new_expr,
+                    || new_expr
                 ) {
                     return recurse_expr(module, run, expr_id);
                 }
@@ -534,12 +480,9 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
         }
         Expr::Catch(e) => {
             let new_expr = module.expr(e).clone();
-            if try_replace_expr(
-                module,
-                run,
-                expr_id,
+            if try_replace_expr!(
                 "replacing a catch expression by the expression it wraps",
-                || new_expr,
+                || new_expr
             ) {
                 return recurse_expr(module, run, expr_id);
             }
@@ -547,23 +490,11 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
         }
         Expr::BinaryOperation(_op, e1_id, e2_id) => {
             let e1 = module.expr(e1_id).clone();
-            if try_replace_expr(
-                module,
-                run,
-                expr_id,
-                "replacing a binary operation by its left operand",
-                || e1,
-            ) {
+            if try_replace_expr!("replacing a binary operation by its left operand", || e1) {
                 return recurse_expr(module, run, expr_id);
             }
             let e2 = module.expr(e2_id).clone();
-            if try_replace_expr(
-                module,
-                run,
-                expr_id,
-                "replacing a binary operation by its right operand",
-                || e2,
-            ) {
+            if try_replace_expr!("replacing a binary operation by its right operand", || e2) {
                 return recurse_expr(module, run, expr_id);
             }
             reduce_expr(module, run, e1_id);
@@ -571,25 +502,16 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
         }
         Expr::UnaryOperation(_op, e_id) => {
             let e = module.expr(e_id).clone();
-            if try_replace_expr(
-                module,
-                run,
-                expr_id,
-                "replacing a unary operation by its operand",
-                || e,
-            ) {
+            if try_replace_expr!("replacing a unary operation by its operand", || e) {
                 return recurse_expr(module, run, expr_id);
             }
             reduce_expr(module, run, e_id);
         }
         Expr::Case(matched_expr, ref mut cases) => {
             let new_expr = module.expr(matched_expr).clone();
-            if try_replace_expr(
-                module,
-                run,
-                expr_id,
+            if try_replace_expr!(
                 "replacing a case expression by the expression it matched",
-                || new_expr,
+                || new_expr
             ) {
                 return recurse_expr(module, run, expr_id);
             }
@@ -600,13 +522,10 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                     break;
                 }
                 let (p, g, b) = cases.remove(i);
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
-                    "eliminating a case from a case expression",
-                    || Expr::Case(matched_expr, cases.clone()),
-                ) {
+                if try_replace_expr!("eliminating a case from a case expression", || Expr::Case(
+                    matched_expr,
+                    cases.clone()
+                )) {
                     continue;
                 }
                 cases.insert(i, (p, g, b));
@@ -614,13 +533,9 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
 
             if cases.len() == 1 {
                 let (p, _g, _b) = cases[0];
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
-                    "replacing a case expression by an assignment",
-                    || Expr::Assignment(p, matched_expr),
-                ) {
+                if try_replace_expr!("replacing a case expression by an assignment", || {
+                    Expr::Assignment(p, matched_expr)
+                }) {
                     return recurse_expr(module, run, expr_id);
                 }
             }
@@ -642,12 +557,9 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                     let Guard { guard_seqs, .. } = module.guard(g);
                     if exprs.len() == 1 && guard_seqs.len() == 0 {
                         let new_expr = module.expr(exprs[0]).clone();
-                        let _ = try_replace_expr(
-                            module,
-                            run,
-                            expr_id,
+                        let _ = try_replace_expr!(
                             "replacing a trivial case expression by its only sub-expression",
-                            || new_expr,
+                            || new_expr
                         );
                     }
                 }
@@ -655,13 +567,9 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
         }
         Expr::Assignment(p_id, e_id) => {
             let new_expr = module.expr(e_id).clone();
-            if try_replace_expr(
-                module,
-                run,
-                expr_id,
-                "replacing an assignment by its right-hand side",
-                || new_expr,
-            ) {
+            if try_replace_expr!("replacing an assignment by its right-hand side", || {
+                new_expr
+            }) {
                 return recurse_expr(module, run, expr_id);
             }
             reduce_pattern(module, run, p_id);
@@ -670,31 +578,21 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
         Expr::MapLiteral(ref mut mappings) => {
             for i in (0..mappings.len()).rev() {
                 let (k, v) = mappings.remove(i);
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
-                    "eliminating an element of a map literal",
-                    || Expr::MapLiteral(mappings.clone()),
-                ) {
+                if try_replace_expr!("eliminating an element of a map literal", || {
+                    Expr::MapLiteral(mappings.clone())
+                }) {
                     continue;
                 }
                 mappings.insert(i, (k, v));
             }
-            if try_replace_expr(
-                module,
-                run,
-                expr_id,
-                "replacing a map literal by a tuple",
-                || {
-                    let mut args = Vec::new();
-                    for (e1, e2) in mappings.iter() {
-                        args.push(*e1);
-                        args.push(*e2);
-                    }
-                    Expr::Tuple(args)
-                },
-            ) {
+            if try_replace_expr!("replacing a map literal by a tuple", || {
+                let mut args = Vec::new();
+                for (e1, e2) in mappings.iter() {
+                    args.push(*e1);
+                    args.push(*e2);
+                }
+                Expr::Tuple(args)
+            }) {
                 return recurse_expr(module, run, expr_id);
             }
             for (e1, e2) in mappings {
@@ -704,22 +602,16 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
         }
         Expr::MapInsertion(e_id, k_id, v_id) | Expr::MapUpdate(e_id, k_id, v_id) => {
             let e = module.expr(e_id).clone();
-            if try_replace_expr(
-                module,
-                run,
-                expr_id,
+            if try_replace_expr!(
                 "replacing a map insertion/update by its first operand",
-                || e,
+                || e
             ) {
                 return recurse_expr(module, run, expr_id);
             }
             let map_literal_elements = vec![(k_id, v_id)];
-            if try_replace_expr(
-                module,
-                run,
-                expr_id,
+            if try_replace_expr!(
                 "replacing a map insertion/update by its second operand as a map literal",
-                || Expr::MapLiteral(map_literal_elements),
+                || Expr::MapLiteral(map_literal_elements)
             ) {
                 return recurse_expr(module, run, expr_id);
             }
@@ -732,13 +624,9 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
             // TODO: add another reduction, that removes size/type-specifier.
             for i in (0..elements.len()).rev() {
                 let (v, s, ts) = elements.remove(i);
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
-                    "eliminating an element of a bitstring construction",
-                    || Expr::BitstringConstruction(elements.clone()),
-                ) {
+                if try_replace_expr!("eliminating an element of a bitstring construction", || {
+                    Expr::BitstringConstruction(elements.clone())
+                }) {
                     continue;
                 }
                 elements.insert(i, (v, s, ts));
@@ -746,23 +634,17 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
             if elements.len() == 1 {
                 let (v, s, _) = elements[0];
                 let new_expr = module.expr(v).clone();
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
+                if try_replace_expr!(
                     "replacing a single element bitstring construction by that element",
-                    || new_expr,
+                    || new_expr
                 ) {
                     return recurse_expr(module, run, expr_id);
                 }
                 if let Some(actual_size) = s {
                     let new_expr = module.expr(actual_size).clone();
-                    if try_replace_expr(
-                        module,
-                        run,
-                        expr_id,
+                    if try_replace_expr!(
                         "replacing a single element bitstring construction by that element's size",
-                        || new_expr,
+                        || new_expr
                     ) {
                         return recurse_expr(module, run, expr_id);
                     }
@@ -786,13 +668,7 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
         }
         Expr::Comprehension(kind, value, ref mut elements) => {
             let value_clone = module.expr(value).clone();
-            if try_replace_expr(
-                module,
-                run,
-                expr_id,
-                "replacing a comprehension by its content",
-                || value_clone,
-            ) {
+            if try_replace_expr!("replacing a comprehension by its content", || value_clone) {
                 return recurse_expr(module, run, expr_id);
             }
 
@@ -808,13 +684,10 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                     break;
                 }
                 let clause = clauses.remove(i);
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
-                    "eliminating a clause from a fun expression",
-                    || Expr::Fun(var_name, clauses.clone()),
-                ) {
+                if try_replace_expr!("eliminating a clause from a fun expression", || Expr::Fun(
+                    var_name,
+                    clauses.clone()
+                )) {
                     continue;
                 }
                 clauses.insert(i, clause);
@@ -829,37 +702,25 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                 let Guard { guard_seqs, .. } = module.guard(*guard);
                 if exprs.len() == 1 && guard_seqs.len() == 0 {
                     let new_expr = module.expr(exprs[0]).clone();
-                    let _ = try_replace_expr(
-                        module,
-                        run,
-                        expr_id,
+                    let _ = try_replace_expr!(
                         "replacing a single-expression fun by that expression",
-                        || new_expr,
+                        || new_expr
                     );
                 }
             }
         }
         Expr::Try(exprs, ref mut of, ref mut catch, ref mut after) => {
             let new_expr = Expr::Block(exprs);
-            if try_replace_expr(
-                module,
-                run,
-                expr_id,
+            if try_replace_expr!(
                 "replacing a try expression by the expressions that are tried",
-                || new_expr,
+                || new_expr
             ) {
                 return recurse_expr(module, run, expr_id);
             }
 
             if let Some(after_body) = after {
                 let new_expr = Expr::Block(*after_body);
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
-                    "replacing a try expression by its after block",
-                    || new_expr,
-                ) {
+                if try_replace_expr!("replacing a try expression by its after block", || new_expr) {
                     return recurse_expr(module, run, expr_id);
                 }
             }
@@ -867,37 +728,23 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
             if catch.is_some() && after.is_some() {
                 // FIXME: size
                 let new_expr = Expr::Try(exprs.clone(), of.clone(), None, after.clone());
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
-                    "removing the catch section of a try expression",
-                    || new_expr,
-                ) {
+                if try_replace_expr!("removing the catch section of a try expression", || {
+                    new_expr
+                }) {
                     return recurse_expr(module, run, expr_id);
                 }
                 // FIXME: size
                 let new_expr = Expr::Try(exprs.clone(), of.clone(), catch.clone(), None);
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
-                    "removing the after section of a try expression",
-                    || new_expr,
-                ) {
+                if try_replace_expr!("removing the after section of a try expression", || {
+                    new_expr
+                }) {
                     return recurse_expr(module, run, expr_id);
                 }
             }
 
             if let Some(ref mut of_cases) = of {
                 let new_expr = Expr::Try(exprs.clone(), None, catch.clone(), after.clone());
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
-                    "removing the of section of a try expression",
-                    || new_expr,
-                ) {
+                if try_replace_expr!("removing the of section of a try expression", || new_expr) {
                     return recurse_expr(module, run, expr_id);
                 }
                 for i in (0..of_cases.len()).rev() {
@@ -905,19 +752,14 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                         break;
                     }
                     let (p, g, b) = of_cases.remove(i);
-                    if !try_replace_expr(
-                        module,
-                        run,
-                        expr_id,
+                    if !try_replace_expr!(
                         "eliminating a case from the of section of a try expression",
-                        || {
-                            Expr::Try(
-                                exprs.clone(),
-                                Some(of_cases.clone()),
-                                catch.clone(),
-                                after.clone(),
-                            )
-                        },
+                        || Expr::Try(
+                            exprs.clone(),
+                            Some(of_cases.clone()),
+                            catch.clone(),
+                            after.clone(),
+                        )
                     ) {
                         of_cases.insert(i, (p, g, b));
                     }
@@ -945,24 +787,18 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
         }
         Expr::Maybe(ref mut exprs, ref mut else_section) => {
             if let Some(else_cases) = else_section {
-                if try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
-                    "removing the else section of a maybe",
-                    || Expr::Maybe(exprs.clone(), None),
-                ) {
+                if try_replace_expr!("removing the else section of a maybe", || Expr::Maybe(
+                    exprs.clone(),
+                    None
+                )) {
                     *else_section = None;
                 } else {
                     let trivial_expr_id =
                         module.add_expr(Expr::Atom("ok".to_string()), TypeApproximation::Atom);
                     let new_expr = Expr::Case(trivial_expr_id, else_cases.clone());
-                    if try_replace_expr(
-                        module,
-                        run,
-                        expr_id,
+                    if try_replace_expr!(
                         "replacing a maybe by its else section converted to a case expression",
-                        || new_expr,
+                        || new_expr
                     ) {
                         return recurse_expr(module, run, expr_id);
                     }
@@ -978,13 +814,10 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                 if exprs.len() > 1 {
                     // Avoid eliminating the last expression of a body.
                     let maybe_expr = exprs.remove(i);
-                    if try_replace_expr(
-                        module,
-                        run,
-                        expr_id,
-                        "eliminating an expression from a maybe",
-                        || Expr::Maybe(exprs.clone(), else_section.clone()),
-                    ) {
+                    if try_replace_expr!("eliminating an expression from a maybe", || Expr::Maybe(
+                        exprs.clone(),
+                        else_section.clone()
+                    )) {
                         continue;
                     } else {
                         exprs.insert(i, maybe_expr);
@@ -994,12 +827,9 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                     MaybeExpr::Normal(e) => reduce_expr(module, run, e),
                     MaybeExpr::MaybeAssignment(p, e) => {
                         exprs[i] = MaybeExpr::Normal(e);
-                        if try_replace_expr(
-                            module,
-                            run,
-                            expr_id,
+                        if try_replace_expr!(
                             "replacing a maybe assignment by its right-hand side",
-                            || Expr::Maybe(exprs.clone(), else_section.clone()),
+                            || Expr::Maybe(exprs.clone(), else_section.clone())
                         ) {
                             reduce_expr(module, run, e);
                         } else {
@@ -1013,12 +843,9 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
             if else_section.is_none() && exprs.len() == 1 {
                 if let MaybeExpr::Normal(e) = exprs[0] {
                     let new_expr = module.expr(e).clone();
-                    let _ = try_replace_expr(
-                        module,
-                        run,
-                        expr_id,
+                    let _ = try_replace_expr!(
                         "replacing a trivial maybe expression by its only sub-expression",
-                        || new_expr,
+                        || new_expr
                     );
                 }
             }
@@ -1027,13 +854,10 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
             reduce_body(module, run, b);
             if module.body(b).exprs.len() == 1 {
                 let new_expr = module.expr(module.body(b).exprs[0]).clone();
-                let _ = try_replace_expr(
-                    module,
-                    run,
-                    expr_id,
-                    "replacing a begin..end block by its single element",
-                    || new_expr,
-                );
+                let _ =
+                    try_replace_expr!("replacing a begin..end block by its single element", || {
+                        new_expr
+                    });
             }
         }
         Expr::Var(_) | Expr::Nil() | Expr::Atom(_) | Expr::Integer(_) | Expr::Float(_) => (),
