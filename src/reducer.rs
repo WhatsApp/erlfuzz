@@ -875,17 +875,19 @@ fn reduce_comprehension_elements<
     make_expr: MakeExpr,
 ) {
     for i in (0..elements.len()).rev() {
-        let elem = elements.remove(i);
-        if try_replace_expr(
-            module,
-            run,
-            expr_id,
-            "eliminating an element of a comprehension",
-            || make_expr(elements),
-        ) {
-            continue;
+        if elements.len() > 1 {
+            let elem = elements.remove(i);
+            if try_replace_expr(
+                module,
+                run,
+                expr_id,
+                "eliminating an element of a comprehension",
+                || make_expr(elements),
+            ) {
+                continue;
+            }
+            elements.insert(i, elem);
         }
-        elements.insert(i, elem);
         match elements[i] {
             ComprehensionElement::Filter(_) => (),
             generator @ ComprehensionElement::ListGenerator(_, e)
