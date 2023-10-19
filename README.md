@@ -131,7 +131,7 @@ BEAM VM:
 - https://github.com/erlang/otp/issues/6717
 - https://github.com/erlang/otp/pull/6838
 - https://github.com/erlang/otp/pull/6839
-- https://github.com/erlang/otp/pull/7282
+- https://github.com/erlang/otp/issues/7282
 
 erlc:
 - https://github.com/erlang/otp/issues/6163
@@ -212,6 +212,16 @@ erlc:
 - https://github.com/erlang/otp/pull/7340
 - https://github.com/erlang/otp/issues/7354
 - https://github.com/erlang/otp/issues/7370
+- https://github.com/erlang/otp/pull/7448#issuecomment-1618443949
+- https://github.com/erlang/otp/issues/7467
+- https://github.com/erlang/otp/issues/7468
+- https://github.com/erlang/otp/pull/7448#issuecomment-1621245246
+- https://github.com/erlang/otp/issues/7477
+- https://github.com/erlang/otp/issues/7478
+- https://github.com/erlang/otp/pull/7489#issuecomment-1633795558
+- https://github.com/erlang/otp/issues/7494
+- https://github.com/erlang/otp/issues/7504
+- https://github.com/erlang/otp/pull/7527#issue-1833154980
 
 dialyzer:
 - https://github.com/erlang/otp/issues/6419
