@@ -39,7 +39,6 @@ I recommend running this in a window controlled by `tmux`, `screen`, etc., so it
 There are similar scripts for fuzzing other tools such as `erlfmt`, `dialyzer`, or `eqwalizer`.
 For some of these, it may be required to pass additional options to `erlfuzz`:
 - `run_eqwalizer_once.sh`:
-   - `--disable-maybe`
    - `--disable-shadowing`
 - `run_gradualizer_once.sh`:
   - `--disable-map-comprehensions`
@@ -242,6 +241,7 @@ eqWAlizer:
 - https://github.com/WhatsApp/eqwalizer/commit/d8afa8e7cc27a115570198539128cffd16e16866
 - https://github.com/WhatsApp/eqwalizer/commit/75de28b27345b7796cf4c39a460d93b1070e02ac
 - https://github.com/WhatsApp/eqwalizer/commit/ae608820ec08c2108e438a92b9d7a0fdf999a06b
+- https://github.com/WhatsApp/eqwalizer/commit/904449753e68388bc5b33f8b12217b6af6978bf7
 
 inferl:
 - https://github.com/facebook/infer/commit/dbdcf4863ee2751a6b671f072850b29b4916bf5b
