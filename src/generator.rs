@@ -85,7 +85,14 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
         arities.sort_unstable();
         arities.dedup();
         for arity in arities {
-            let num_clauses: usize = if arity > 0 { rng.gen_range(1..=5) } else { 1 };
+            let num_clauses: usize = if arity > 0 {
+                [1, 1, 1, 1, 1, 2, 3, 10]
+                    .into_iter()
+                    .choose(&mut rng)
+                    .unwrap()
+            } else {
+                1
+            };
             let clause_types = make_vec(num_clauses, || gen_clause_type(&mut rng, arity));
             let function_type = join_function_types(&clause_types);
             bound_functions.push(FunctionDeclaration {
