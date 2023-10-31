@@ -24,11 +24,11 @@ On a machine with access to the internet: `cargo build --release`
 
 ### With a provided script
 
-If the goal is to fuzz `erlc` & `erl`, the easiest way is to use the provided `run_erl_once.sh` script from `erlfuzz/` as follows:
+If the goal is to fuzz `erlc` & `erl`, the easiest way is to use the provided `run_erl_debug.sh` script from `erlfuzz/` as follows:
 ```
 mkdir -p out
 mkdir -p interesting
-seq 1000000 | parallel --line-buffer "./target/release/erlfuzz fuzz -c ./scripts/run_erl_once.sh --tmp-directory out --interesting-directory interesting test{}"
+seq 1000000 | parallel --line-buffer "./target/release/erlfuzz fuzz -c ./scripts/run_erl_debug.sh --tmp-directory out --interesting-directory interesting test{}"
 ```
 This will repeatedly run the fuzzer, store its output in a file in `out/`, call `erlc` and `erl` on that file, and then either delete it or move it to `interesting/` if it triggered a crash.
 It will automatically make use of all cores on your machine. If that is not what you want, you can limit it to 5 cores (for example) by passing `-j 5` to parallel.
@@ -68,7 +68,7 @@ For some of these, it may be required to pass additional options to `erlfuzz`:
 
 `erlang fuzz` can be used to fuzz any other command that accepts an Erlang file.
 A return code of 0 must be used to indicate that the program ran successfully, and non-0 to report that a bug was found.
-I strongly recommend wrapping the program being fuzzed by a script that uses `timeout` and `ulimit -m`; you can look at `run_erl_once.sh` for inspiration.
+I strongly recommend wrapping the program being fuzzed by a script that uses `timeout` and `ulimit -m`; you can look at `run_erl_debug.sh` for inspiration.
 Also consider using stronger sandboxing (e.g. with cgroups) if the program under test is likely to have dangerous side effects.
 
 ### Manually
@@ -83,7 +83,7 @@ Both the seed and all relevant options are listed in a comment at the top of the
 
 For example:
 ```
-./target/release/erlfuzz reduce -c ./scripts/run_erl_once.sh --tmp-directory out --minimized-directory minimized --seed 3137934125722527840 foobar
+./target/release/erlfuzz reduce -c ./scripts/run_erl_debug.sh --tmp-directory out --minimized-directory minimized --seed 3137934125722527840 foobar
 ```
 Would reduce the testcase that was generated with seed 3137934125722527840, use `out/foobar.erl` as a scratch file, and store the result in `minimized/foobar.erl`.
 
