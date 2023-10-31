@@ -9,15 +9,16 @@ use std::iter::zip;
 
 use TypeApproximation::*;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeApproximation {
     Any,
     Integer,
     Float,
     Number,
-    Tuple,
+    AnyTuple,
+    Tuple(Vec<TypeApproximation>),
     Atom,
-    List,
+    List(Box<TypeApproximation>),
     Boolean,
     Map,
     Bitstring,
@@ -29,55 +30,105 @@ pub enum TypeApproximation {
 }
 impl TypeApproximation {
     pub fn is_subtype_of(&self, other: &Self) -> bool {
-        (*other == Any)
-            || (*self == Integer && *other == Number)
-            || (*self == Float && *other == Number)
-            || (*self == Boolean && *other == Atom)
-            || (self == other)
-            || (*self == Bottom)
+        if self == other {
+            return true;
+        }
+        match (self, other) {
+            (Bottom, _) => true,
+            (_, Any) => true,
+            (Integer, Number) => true,
+            (Float, Number) => true,
+            (Boolean, Atom) => true,
+            (Tuple(_), AnyTuple) => true,
+            (Tuple(ts1), Tuple(ts2)) if ts1.len() == ts2.len() => ts1
+                .iter()
+                .zip(ts2.iter())
+                .all(|(t1, t2)| t1.is_subtype_of(t2)),
+            (List(t1), List(t2)) => t1.is_subtype_of(t2),
+            _ => false,
+        }
     }
     pub fn refine(&mut self, other: &Self) {
         if self.is_subtype_of(other) {
             return;
         }
         if other.is_subtype_of(self) {
-            *self = *other;
-        } else {
-            *self = Bottom;
+            *self = other.clone();
+            return;
+        }
+        match (self, other) {
+            (List(ref mut t1), List(t2)) => {
+                t1.refine(t2);
+            }
+            (Tuple(ref mut ts1), Tuple(ts2)) if ts1.len() == ts2.len() => {
+                ts1.iter_mut()
+                    .zip(ts2.iter())
+                    .for_each(|(t1, t2)| t1.refine(t2));
+            }
+            (ref mut t, _) => {
+                **t = Bottom;
+            }
         }
     }
 }
+
+pub fn write_list_strings<I: Iterator<Item = String>>(
+    f: &mut fmt::Formatter<'_>,
+    l: I,
+    separator: &str,
+) -> fmt::Result {
+    let mut is_first = true;
+    for x in l {
+        if !is_first {
+            write!(f, "{}", separator)?;
+        }
+        is_first = false;
+        write!(f, "{}", x)?;
+    }
+    Ok(())
+}
+
 impl fmt::Display for TypeApproximation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Any => "term()",
-                Integer => "integer()",
-                Float => "float()",
-                Number => "number()",
-                Tuple => "tuple()",
-                Atom => "atom()",
-                List => "list()",
-                Boolean => "boolean()",
-                Map => "map()",
-                Bitstring => "bitstring()",
-                Fun => "fun()",
-                Pid => "pid()",
-                Port => "port()",
-                Ref => "reference()",
-                Bottom => "none()",
+        match self {
+            List(t) if **t == Any => write!(f, "list()"),
+            List(t) => write!(f, "[{}]", t),
+            Tuple(ts) => {
+                write!(f, "{{")?;
+                write_list_strings(f, ts.iter().map(|t| t.to_string()), ", ")?;
+                write!(f, "}}")
             }
-        )
+            Any => write!(f, "term()"),
+            Integer => write!(f, "integer()"),
+            Float => write!(f, "float()"),
+            Number => write!(f, "number()"),
+            AnyTuple => write!(f, "tuple()"),
+            Atom => write!(f, "atom()"),
+            Boolean => write!(f, "boolean()"),
+            Map => write!(f, "map()"),
+            Bitstring => write!(f, "bitstring()"),
+            Fun => write!(f, "fun()"),
+            Pid => write!(f, "pid()"),
+            Port => write!(f, "port()"),
+            Ref => write!(f, "reference()"),
+            Bottom => write!(f, "none()"),
+        }
     }
 }
 
 pub fn type_union(left: &TypeApproximation, right: &TypeApproximation) -> TypeApproximation {
     match (left, right) {
-        _ if left.is_subtype_of(right) => *right,
-        _ if right.is_subtype_of(left) => *left,
+        _ if left.is_subtype_of(right) => right.clone(),
+        _ if right.is_subtype_of(left) => left.clone(),
         (Float, Integer) | (Integer, Float) => Number,
+        (List(t1), List(t2)) => List(Box::new(type_union(t1, t2))),
+        (Tuple(ts1), Tuple(ts2)) if ts1.len() == ts2.len() => Tuple(
+            ts1.iter()
+                .zip(ts2.iter())
+                .map(|(t1, t2)| type_union(t1, t2))
+                .collect::<Vec<_>>(),
+        ),
+        (Tuple(_ts1), Tuple(_ts2)) => AnyTuple,
         _ => Any,
     }
 }

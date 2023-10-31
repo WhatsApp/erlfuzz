@@ -177,10 +177,10 @@ impl Scope {
                 // FIXME: this could be done more efficiently.
                 let mut map = new_vars
                     .iter()
-                    .copied()
+                    .cloned()
                     .collect::<HashMap<VarNum, TypeApproximation>>();
                 for (v, t) in &element.vars {
-                    let _ = map.entry(*v).or_insert(*t);
+                    let _ = map.entry(*v).or_insert(t.clone());
                 }
                 element.vars = map.into_iter().collect();
                 element.vars.sort_by(|(v1, _t1), (v2, _t2)| v1.cmp(v2));
@@ -234,7 +234,7 @@ impl Environment {
                 },
             )
             .collect::<Vec<_>>();
-        ERLANG_FUNCTIONS.iter().for_each(
+        get_erlang_functions().iter().for_each(
             |(name, determinism, guard_context, call_locality, return_type, arg_types)| {
                 funs.push(FunctionInformation {
                     module_name: "erlang".to_string(),
@@ -272,16 +272,13 @@ impl Environment {
         let mut depth = max_depth;
         while depth > 0 {
             let scope = &self.scopes[depth - 1];
-            let maybe_result = scope
+            result = scope
                 .active_element()
                 .vars
                 .iter()
                 .filter(|(_v, t)| t.is_subtype_of(wanted_type))
-                .choose(rng);
-            match maybe_result {
-                None => (),
-                Some(new_result) => result = Some(*new_result),
-            };
+                .choose(rng)
+                .cloned();
             if result.is_some() && rng.gen::<bool>() {
                 return result;
             }
@@ -303,7 +300,7 @@ impl Environment {
         rng: &mut RngType,
         wanted_type: &TypeApproximation,
     ) -> Option<(VarNum, TypeApproximation)> {
-        let mut result = None;
+        let mut result: Option<(VarNum, TypeApproximation)>;
         let mut depth = self.scopes.len();
         while depth > 0 {
             if let Multi {
@@ -312,17 +309,14 @@ impl Environment {
                 ..
             } = &self.scopes[depth - 1]
             {
-                let maybe_result = elements
+                result = elements
                     .iter()
                     .map(|ScopeElement { vars, .. }| {
                         vars.iter().filter(|(_v, t)| t.is_subtype_of(wanted_type))
                     })
                     .flatten()
-                    .choose(rng);
-                match maybe_result {
-                    None => (),
-                    Some(new_result) => result = Some(*new_result),
-                }
+                    .choose(rng)
+                    .cloned();
                 if rng.gen::<bool>() {
                     return result;
                 }
@@ -428,10 +422,11 @@ impl Environment {
                     .iter()
                     .map(|ScopeElement { vars, .. }| vars.iter())
                     .flatten()
+                    .cloned()
                     .collect::<Vec<_>>();
                 mapping.sort_by(|(v1, _), (v2, _)| v1.cmp(v2));
                 for (v, t) in mapping {
-                    self.current_scope_mut().active_element_mut().push(*v, *t);
+                    self.current_scope_mut().active_element_mut().push(v, t);
                 }
             }
             KeepIntersection => {
@@ -439,7 +434,7 @@ impl Environment {
                 let last_element = elements.last().unwrap();
                 for (v, t) in last_element.vars.iter() {
                     // This is quadratic, but I expect N to be very small here. It would be easy to do a binary search instead as the vectors are sorted
-                    let mut refined_type = *t;
+                    let mut refined_type = t.clone();
                     let mut found = false;
                     let num_elements = elements.len();
                     // Skipping the last element since we are already iterating over it

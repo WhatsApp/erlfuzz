@@ -167,7 +167,7 @@ fn gen_start_function<RngType: rand::Rng>(
         let ctx = Context::new();
         let mut size = 1;
         let args = make_vec(arity, || {
-            recurse_any_expr(Any, rng, module, ctx, env, &mut size)
+            recurse_any_expr(&Any, rng, module, ctx, env, &mut size)
         });
         let call = module.add_expr(Expr::LocalCall(name, args), Any);
         exprs.push(module.add_expr(Expr::Catch(call), Any));
@@ -201,7 +201,7 @@ fn gen_wrapper_function<RngType: rand::Rng>(
     let ctx = Context::new();
     let mut size = 1;
     let args = make_vec(arity, || {
-        recurse_any_expr(Any, rng, module, ctx, env, &mut size)
+        recurse_any_expr(&Any, rng, module, ctx, env, &mut size)
     });
     let inner_call = module.add_expr(Expr::LocalCall(name, args), Any);
     let outer_call = match wrapper {
@@ -224,8 +224,9 @@ fn gen_wrapper_function<RngType: rand::Rng>(
                 Expr::Case(catch_expr, vec![(p1, g1, b1), (p_default, g2, b2)]),
                 Any,
             );
-            let list_expr = module.add_expr(Expr::List(vec![case_expr]), List);
-            let format_literal = module.add_expr(Expr::String("~kp".to_string()), List);
+            let list_expr = module.add_expr(Expr::List(vec![case_expr]), List(Box::new(Any)));
+            let format_literal =
+                module.add_expr(Expr::String("~kp".to_string()), List(Box::new(Integer)));
             module.add_expr(
                 Expr::RemoteCall(
                     "io".to_string(),
@@ -283,13 +284,35 @@ where
 }
 
 pub fn choose_type<RngType: rand::Rng>(rng: &mut RngType) -> TypeApproximation {
-    [
-        Any, Integer, Float, Number, Tuple, Atom, List, Boolean, Map, Bitstring, Fun, Pid, Port,
-        Ref, Bottom,
+    let any_list = List(Box::new(Any));
+    let result = [
+        Any,
+        Integer,
+        Float,
+        Number,
+        AnyTuple,
+        Atom,
+        any_list.clone(),
+        Boolean,
+        Map,
+        Bitstring,
+        Fun,
+        Pid,
+        Port,
+        Ref,
+        Bottom,
     ]
     .into_iter()
     .choose(rng)
-    .unwrap()
+    .unwrap();
+    if result == any_list && rng.gen::<bool>() {
+        List(Box::new(choose_type(rng)))
+    } else if result == AnyTuple && rng.gen::<bool>() {
+        let arity = choose_arity(rng);
+        Tuple(make_vec(arity, || choose_type(rng)))
+    } else {
+        result
+    }
 }
 
 fn gen_function<RngType: rand::Rng>(
@@ -339,7 +362,7 @@ fn gen_function_clause<RngType: rand::Rng>(
                 } else {
                     ctx
                 };
-                recurse_any_pattern(clause_type.arg_types[i], rng, module, ctx, env, &mut size)
+                recurse_any_pattern(&clause_type.arg_types[i], rng, module, ctx, env, &mut size)
             },
         )
     });
@@ -347,16 +370,16 @@ fn gen_function_clause<RngType: rand::Rng>(
     let guard = gen_guard(
         rng,
         module,
-        ctx.for_recursion_with_spent_size(size).with_type(Boolean),
+        ctx.for_recursion_with_spent_size(size),
         env,
         &mut size,
     );
 
     let body = gen_body(
+        &clause_type.return_type,
         rng,
         module,
-        ctx.for_recursion_with_spent_size(size)
-            .with_type(clause_type.return_type),
+        ctx.for_recursion_with_spent_size(size),
         env,
         &mut size,
     );
@@ -379,7 +402,7 @@ fn choose_weighted<T: Copy, F: Fn(T) -> u32, RngType: rand::Rng>(
     Some(choices[index])
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum PatternKind {
     Nil,
     Atom,
@@ -431,41 +454,8 @@ fn pattern_kind_weight(kind: PatternKind) -> u32 {
     }
 }
 
-fn is_pattern_kind_allowed_by_context(kind: PatternKind, ctx: Context) -> bool {
-    match kind {
-        PatternKind::Nil => ctx.allows_type(List),
-        PatternKind::Atom => ctx.allows_type(Atom),
-        PatternKind::Boolean => ctx.allows_type(Boolean),
-        PatternKind::Integer => ctx.allows_type(Integer),
-        PatternKind::Float => ctx.allows_type(Float),
-        PatternKind::Underscore => true,
-        PatternKind::UnboundVariable => !ctx.is_in_guard,
-        PatternKind::UsedVariable => !ctx.no_bound_vars,
-        PatternKind::EqualPatterns => ctx.may_recurse(),
-        PatternKind::Tuple => ctx.may_recurse() && ctx.allows_type(Tuple),
-        PatternKind::List => ctx.may_recurse() && ctx.allows_type(List),
-        PatternKind::Bitstring => ctx.allows_type(Bitstring),
-        PatternKind::Map => ctx.allows_type(Map),
-    }
-}
-
-fn pick_pattern_kind<RngType: rand::Rng>(
-    rng: &mut RngType,
-    ctx: Context,
-    kinds: &[PatternKind],
-) -> PatternKind {
-    choose_weighted(rng, kinds, |kind| {
-        if is_pattern_kind_allowed_by_context(kind, ctx) {
-            pattern_kind_weight(kind)
-        } else {
-            0
-        }
-    })
-    .unwrap()
-}
-
 fn recurse_any_pattern<RngType: rand::Rng>(
-    wanted_type: TypeApproximation,
+    wanted_type: &TypeApproximation,
     rng: &mut RngType,
     module: &mut Module,
     ctx: Context,
@@ -473,70 +463,127 @@ fn recurse_any_pattern<RngType: rand::Rng>(
     size_to_incr: &mut ASTSize,
 ) -> PatternId {
     // Occasionally generate completely/trivially ill-typed patterns on purpose.
-    let wanted_type = if rng.gen_bool(0.01) { Any } else { wanted_type };
-    let ctx = ctx
-        .with_type(wanted_type)
-        .for_recursion_with_spent_size(*size_to_incr);
-    let kind = pick_pattern_kind(rng, ctx, ALL_PATTERN_KINDS);
-    gen_pattern(rng, module, ctx, env, size_to_incr, kind)
+    let wanted_type = if rng.gen_bool(0.01) {
+        &Any
+    } else {
+        wanted_type
+    };
+    recurse_pattern(
+        wanted_type,
+        rng,
+        module,
+        ctx,
+        env,
+        size_to_incr,
+        &ALL_PATTERN_KINDS,
+    )
+}
+
+fn recurse_pattern<RngType: rand::Rng>(
+    wanted_type: &TypeApproximation,
+    rng: &mut RngType,
+    module: &mut Module,
+    ctx: Context,
+    env: &mut Environment,
+    size_to_incr: &mut ASTSize,
+    kinds: &[PatternKind],
+) -> PatternId {
+    let ctx = ctx.for_recursion_with_spent_size(*size_to_incr);
+    let mut available_kinds = Vec::from(kinds);
+    loop {
+        let maybe_kind = choose_weighted(rng, &available_kinds, |kind| pattern_kind_weight(kind));
+        match maybe_kind {
+            None => {
+                return gen_pattern(
+                    rng,
+                    module,
+                    ctx,
+                    &Any,
+                    env,
+                    size_to_incr,
+                    PatternKind::Underscore,
+                )
+                .unwrap();
+            }
+            Some(kind) => {
+                match gen_pattern(rng, module, ctx, &wanted_type, env, size_to_incr, kind) {
+                    Some(p_id) => return p_id,
+                    None => remove_element(&mut available_kinds, &kind),
+                }
+            }
+        }
+    }
 }
 
 fn gen_pattern<RngType: rand::Rng>(
     rng: &mut RngType,
     m: &mut Module,
     ctx: Context,
+    wanted_type: &TypeApproximation,
     env: &mut Environment,
     size_to_incr: &mut ASTSize,
     kind: PatternKind,
-) -> PatternId {
+) -> Option<PatternId> {
     let mut size = 1;
     let pattern = match kind {
-        PatternKind::Nil => Pattern::Nil(),
-        PatternKind::Boolean => Pattern::Atom(if rng.gen::<bool>() {
-            "true".to_string()
-        } else {
-            "false".to_string()
-        }),
-        PatternKind::Atom => Pattern::Atom(choose_random_atom(rng)),
-        PatternKind::Integer => Pattern::Integer(choose_random_integer(rng)),
-        PatternKind::Float => Pattern::Float(choose_random_double(rng)),
-        PatternKind::Underscore => Pattern::Underscore(),
-        PatternKind::UsedVariable => match env.pick_used_var_for_pattern(rng, &ctx.expected_type) {
-            Some((v, _t)) => Pattern::NamedVar(v),
-            None => Pattern::Underscore(),
-        },
-        PatternKind::UnboundVariable => {
-            Pattern::NamedVar(env.make_fresh_var(rng, ctx.expected_type))
+        PatternKind::Nil if List(Box::new(Bottom)).is_subtype_of(wanted_type) => Pattern::Nil(),
+        PatternKind::Boolean if Boolean.is_subtype_of(wanted_type) => {
+            Pattern::Atom(if rng.gen::<bool>() {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            })
         }
-        PatternKind::EqualPatterns => {
+        PatternKind::Atom if Atom.is_subtype_of(wanted_type) => {
+            Pattern::Atom(choose_random_atom(rng))
+        }
+        PatternKind::Integer if Integer.is_subtype_of(wanted_type) => {
+            Pattern::Integer(choose_random_integer(rng))
+        }
+        PatternKind::Float if Float.is_subtype_of(wanted_type) => {
+            Pattern::Float(choose_random_double(rng))
+        }
+        PatternKind::Underscore => Pattern::Underscore(),
+        PatternKind::UnboundVariable if !ctx.is_in_guard => {
+            Pattern::NamedVar(env.make_fresh_var(rng, wanted_type.clone()))
+        }
+        PatternKind::UsedVariable if !ctx.no_bound_vars => {
+            match env.pick_used_var_for_pattern(rng, wanted_type) {
+                Some((v, _t)) => Pattern::NamedVar(v),
+                None => return None,
+            }
+        }
+        PatternKind::EqualPatterns if ctx.may_recurse() => {
             env.with_multi_scope_manual(MultiScopeKind::Pattern, NoShadowing, KeepUnion, |env| {
-                let p1 = recurse_any_pattern(ctx.expected_type, rng, m, ctx, env, &mut size);
+                let p1 = recurse_any_pattern(wanted_type, rng, m, ctx, env, &mut size);
                 env.shift_to_sibling(SafeToReuse);
-                let p2 = recurse_any_pattern(ctx.expected_type, rng, m, ctx, env, &mut size);
+                let p2 = recurse_any_pattern(wanted_type, rng, m, ctx, env, &mut size);
                 Pattern::EqualPatterns(p1, p2)
             })
         }
-        PatternKind::Tuple => {
-            let arity = choose_arity(rng);
+        PatternKind::Tuple if ctx.may_recurse() => {
+            let arg_types = get_tuple_subtypes(rng, wanted_type)?;
+            let arity = arg_types.len();
             let elements = env.with_multi_scope_auto(
                 MultiScopeKind::Pattern,
                 NoShadowing,
                 SafeToReuse,
                 KeepUnion,
                 arity,
-                |env, _| recurse_any_pattern(Any, rng, m, ctx, env, &mut size),
+                |env, i| recurse_any_pattern(&arg_types[i], rng, m, ctx, env, &mut size),
             );
             Pattern::Tuple(elements)
         }
-        PatternKind::List => {
+        PatternKind::List if ctx.may_recurse() => {
+            let type_head = get_list_subtype(wanted_type)?;
             env.with_multi_scope_manual(MultiScopeKind::Pattern, NoShadowing, KeepUnion, |env| {
-                let head = recurse_any_pattern(Any, rng, m, ctx, env, &mut size);
+                let head = recurse_any_pattern(&type_head, rng, m, ctx, env, &mut size);
                 env.shift_to_sibling(SafeToReuse);
-                let tail = recurse_any_pattern(List, rng, m, ctx, env, &mut size);
+                let tail = recurse_any_pattern(wanted_type, rng, m, ctx, env, &mut size);
                 Pattern::List(head, tail)
             })
         }
-        PatternKind::Bitstring => {
+        PatternKind::Bitstring if Bitstring.is_subtype_of(wanted_type) => {
             let arity = choose_arity(rng);
             let mut elements = Vec::new();
             for i in 0..arity {
@@ -550,7 +597,7 @@ fn gen_pattern<RngType: rand::Rng>(
                         None
                     }
                     _ => Some(recurse_any_expr(
-                        Integer,
+                        &Integer,
                         rng,
                         m,
                         ctx.in_guard(),
@@ -561,18 +608,20 @@ fn gen_pattern<RngType: rand::Rng>(
 
                 // "When matching Value, value must be either a variable or an integer, or a floating point literal. Expressions are not allowed."
                 // Underscore counts as a special kind of variable and is valid in this context.
-                let value_ctx = ctx.with_type(type_specifier_kind_to_type_approximation(kind));
-                let value_kind = pick_pattern_kind(
+                let value_kind = choose_weighted(
                     rng,
-                    value_ctx,
                     &[
                         PatternKind::Integer,
                         PatternKind::Underscore,
                         PatternKind::UnboundVariable,
                         PatternKind::UsedVariable,
                     ],
-                );
-                let sub_pattern = gen_pattern(rng, m, value_ctx, env, &mut size, value_kind);
+                    |kind| pattern_kind_weight(kind),
+                )
+                .unwrap();
+                let value_type = type_specifier_kind_to_type_approximation(kind);
+                let sub_pattern =
+                    recurse_pattern(&value_type, rng, m, ctx, env, &mut size, &[value_kind]);
                 let type_specifiers =
                     gen_type_specifier(rng, kind, &size_expr, /* signedness_allowed = */ true);
                 elements.push((sub_pattern, size_expr, type_specifiers));
@@ -584,7 +633,7 @@ fn gen_pattern<RngType: rand::Rng>(
             }
             Pattern::Bitstring(elements)
         }
-        PatternKind::Map => {
+        PatternKind::Map if Map.is_subtype_of(wanted_type) => {
             let arity = choose_arity(rng);
             let pairs = env.with_multi_scope_auto(
                 MultiScopeKind::Pattern,
@@ -593,16 +642,17 @@ fn gen_pattern<RngType: rand::Rng>(
                 KeepUnion,
                 arity,
                 |env, _| {
-                    let k = recurse_any_expr(Any, rng, m, ctx.in_guard(), env, &mut size);
-                    let v = recurse_any_pattern(Any, rng, m, ctx, env, &mut size);
+                    let k = recurse_any_expr(&Any, rng, m, ctx.in_guard(), env, &mut size);
+                    let v = recurse_any_pattern(&Any, rng, m, ctx, env, &mut size);
                     (k, v)
                 },
             );
             Pattern::Map(pairs)
         }
+        _ => return None,
     };
     *size_to_incr += pattern.size(m);
-    m.add_pattern(pattern)
+    Some(m.add_pattern(pattern))
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -730,77 +780,8 @@ fn expr_kind_weight(kind: ExprKind) -> u32 {
     }
 }
 
-fn is_expr_kind_allowed_by_context(kind: ExprKind, ctx: Context) -> bool {
-    match kind {
-        ExprKind::Nil => ctx.allows_type(List),
-        ExprKind::Integer => ctx.allows_type(Integer),
-        ExprKind::Float => ctx.allows_type(Float),
-        ExprKind::String => ctx.allows_type(List),
-        ExprKind::BooleanLiteral => ctx.allows_type(Boolean),
-        ExprKind::AtomFunctionName => ctx.allows_type(Atom),
-        ExprKind::AtomOther => ctx.allows_type(Atom),
-        ExprKind::Var => true,
-        ExprKind::LocalCall => ctx.may_recurse(), // allowed in guards because of bifs
-        ExprKind::RemoteCall => ctx.may_recurse() && !ctx.is_in_guard,
-        ExprKind::Tuple => ctx.may_recurse() && ctx.allows_type(Tuple),
-        ExprKind::List => ctx.may_recurse() && ctx.allows_type(List),
-        // stacktraces are imprecise in interpreter mode, and captured by catch
-        ExprKind::Catch => ctx.may_recurse() && !ctx.is_in_guard && !ctx.deterministic,
-        ExprKind::Comparison => ctx.may_recurse() && ctx.allows_type(Boolean),
-        ExprKind::UnaryIntegerBNot => ctx.may_recurse() && ctx.allows_type(Integer),
-        ExprKind::UnaryBooleanNot => ctx.may_recurse() && ctx.allows_type(Boolean),
-        ExprKind::UnaryNumberOp => ctx.may_recurse() && ctx.allows_type(Number),
-        ExprKind::BinaryNumberOp => ctx.may_recurse() && ctx.allows_type(Number),
-        ExprKind::BinaryIntegerOp => ctx.may_recurse() && ctx.allows_type(Integer),
-        ExprKind::BinaryBooleanOp => ctx.may_recurse() && ctx.allows_type(Boolean),
-        ExprKind::BinaryListOp => ctx.may_recurse() && ctx.allows_type(List) && !ctx.is_in_guard,
-        ExprKind::ShortCircuitOp => ctx.may_recurse(),
-        ExprKind::Case => ctx.may_recurse() && !ctx.is_in_guard,
-        ExprKind::Assignment => ctx.may_recurse() && !ctx.is_in_guard,
-        ExprKind::MapLiteral => ctx.allows_type(Map),
-        ExprKind::MapInsertion => ctx.may_recurse() && ctx.allows_type(Map),
-        ExprKind::MapUpdate => ctx.may_recurse() && ctx.allows_type(Map),
-        ExprKind::BitstringConstruction => ctx.allows_type(Bitstring), // may_recurse is not required, as it can be empty
-        ExprKind::ListComprehension => {
-            ctx.may_recurse() && !ctx.is_in_guard && ctx.allows_type(List)
-        }
-        ExprKind::BitstringComprehension => {
-            ctx.may_recurse() && !ctx.is_in_guard && ctx.allows_type(Bitstring)
-        }
-        ExprKind::MapComprehension => {
-            ctx.may_recurse()
-                && !ctx.is_in_guard
-                && ctx.allows_type(Map)
-                && ctx.map_comprehensions_are_allowed
-        }
-        ExprKind::Fun => ctx.may_recurse() && !ctx.is_in_guard && ctx.allows_type(Fun),
-        ExprKind::Try => ctx.may_recurse() && !ctx.is_in_guard,
-        ExprKind::Maybe => ctx.may_recurse() && !ctx.is_in_guard && ctx.maybe_is_allowed,
-        ExprKind::Block => ctx.may_recurse() && !ctx.is_in_guard,
-    }
-}
-
-fn pick_expr_kind<RngType: rand::Rng>(
-    rng: &mut RngType,
-    ctx: Context,
-    kinds: &[ExprKind],
-) -> ExprKind {
-    let maybe_kind = choose_weighted(rng, kinds, |kind| {
-        if is_expr_kind_allowed_by_context(kind, ctx) {
-            expr_kind_weight(kind)
-        } else {
-            0
-        }
-    });
-    match maybe_kind {
-        Some(kind) => kind,
-        // This case can happen if we pick a type like Pid while in a guard
-        None => pick_expr_kind(rng, ctx.with_type(Any), kinds),
-    }
-}
-
 fn recurse_any_expr<RngType: rand::Rng>(
-    wanted_type: TypeApproximation,
+    wanted_type: &TypeApproximation,
     rng: &mut RngType,
     module: &mut Module,
     ctx: Context,
@@ -808,21 +789,49 @@ fn recurse_any_expr<RngType: rand::Rng>(
     size_to_incr: &mut ASTSize,
 ) -> ExprId {
     // Occasionally generate completely/trivially ill-typed expressions on purpose.
-    let wanted_type = if rng.gen_bool(0.01) { Any } else { wanted_type };
-    let ctx = ctx
-        .with_type(wanted_type)
-        .for_recursion_with_spent_size(*size_to_incr);
-    let mut available_kinds = Vec::from(ALL_EXPR_KINDS);
+    let wanted_type = if rng.gen_bool(0.01) {
+        &Any
+    } else {
+        wanted_type
+    };
+    recurse_expr(
+        wanted_type,
+        rng,
+        module,
+        ctx,
+        env,
+        size_to_incr,
+        ALL_EXPR_KINDS,
+    )
+}
+
+fn recurse_expr<RngType: rand::Rng>(
+    wanted_type: &TypeApproximation,
+    rng: &mut RngType,
+    module: &mut Module,
+    ctx: Context,
+    env: &mut Environment,
+    size_to_incr: &mut ASTSize,
+    kinds: &[ExprKind],
+) -> ExprId {
+    let ctx = ctx.for_recursion_with_spent_size(*size_to_incr);
+    let mut available_kinds = Vec::from(kinds);
     loop {
-        let kind = pick_expr_kind(rng, ctx, &available_kinds);
-        match gen_expr(rng, module, ctx, env, size_to_incr, kind) {
-            Some(e_id) => return e_id,
-            None => remove_element(&mut available_kinds, &kind),
+        let maybe_kind = choose_weighted(rng, &available_kinds, |kind| expr_kind_weight(kind));
+        match maybe_kind {
+            None => {
+                // This case can happen if we pick a type like Pid while in a guard
+                return gen_expr(rng, module, ctx, &Any, env, size_to_incr, ExprKind::Nil).unwrap();
+            }
+            Some(kind) => match gen_expr(rng, module, ctx, wanted_type, env, size_to_incr, kind) {
+                Some(e_id) => return e_id,
+                None => remove_element(&mut available_kinds, &kind),
+            },
         }
     }
 }
 
-fn remove_element<T: Eq>(vec: &mut Vec<T>, element: &T) {
+fn remove_element<T: Eq + std::fmt::Debug>(vec: &mut Vec<T>, element: &T) {
     for (index, e) in vec.iter().enumerate() {
         if e == element {
             vec.swap_remove(index);
@@ -832,42 +841,50 @@ fn remove_element<T: Eq>(vec: &mut Vec<T>, element: &T) {
     unreachable!();
 }
 
-// May fail for some expr kinds depending on the environment
 fn gen_expr<RngType: rand::Rng>(
     rng: &mut RngType,
     m: &mut Module,
     ctx: Context,
+    wanted_type: &TypeApproximation,
     env: &mut Environment,
     size_to_incr: &mut ASTSize,
     choice: ExprKind,
 ) -> Option<ExprId> {
     let mut size = 1;
     let expr_id = match choice {
-        ExprKind::Nil => m.add_expr(Expr::Nil(), List),
-        ExprKind::Var => match env.pick_bound_var(rng, &ctx.expected_type) {
+        ExprKind::Nil if List(Box::new(Bottom)).is_subtype_of(wanted_type) => {
+            m.add_expr(Expr::Nil(), List(Box::new(Bottom)))
+        }
+        ExprKind::Var => match env.pick_bound_var(rng, wanted_type) {
             Some((v, t)) => m.add_expr(Expr::Var(v), t),
             None => return None,
         },
-        ExprKind::Integer => m.add_expr(Expr::Integer(choose_random_integer(rng)), Integer),
-        ExprKind::Float => m.add_expr(Expr::Float(choose_random_double(rng)), Float),
-        ExprKind::String => {
+        ExprKind::Integer if Integer.is_subtype_of(wanted_type) => {
+            m.add_expr(Expr::Integer(choose_random_integer(rng)), Integer)
+        }
+        ExprKind::Float if Float.is_subtype_of(wanted_type) => {
+            m.add_expr(Expr::Float(choose_random_double(rng)), Float)
+        }
+        ExprKind::String if List(Box::new(Integer)).is_subtype_of(wanted_type) => {
             let length = rand_distr::Geometric::new(0.1).unwrap().sample(rng);
             // Standard distribution generates all valid unicode code points, which turns out to create strings rejected by the compiler.
             // See https://github.com/erlang/otp/issues/6952 for what this can of worms looks like.
             // So for now, I'm sticking with [a-zA-Z0-9]*, rather than try anything smarter.
             let s = rand_distr::Alphanumeric.sample_string(rng, length.try_into().unwrap());
-            m.add_expr(Expr::String(s), List)
+            m.add_expr(Expr::String(s), List(Box::new(Integer)))
         }
-        ExprKind::AtomFunctionName => {
+        ExprKind::AtomFunctionName if Atom.is_subtype_of(wanted_type) => {
             let name = m.functions.iter().choose(rng).unwrap().name.clone();
             m.add_expr(Expr::Atom(name), Atom)
         }
-        ExprKind::AtomOther => m.add_expr(Expr::Atom(choose_random_atom(rng)), Atom),
-        ExprKind::BooleanLiteral => {
+        ExprKind::AtomOther if Atom.is_subtype_of(wanted_type) => {
+            m.add_expr(Expr::Atom(choose_random_atom(rng)), Atom)
+        }
+        ExprKind::BooleanLiteral if Boolean.is_subtype_of(wanted_type) => {
             let boolean = ["true", "false"].iter().choose(rng).unwrap();
             m.add_expr(Expr::Atom(boolean.to_string()), Boolean)
         }
-        ExprKind::LocalCall => {
+        ExprKind::LocalCall if ctx.may_recurse() => {
             let in_guard = match ctx.is_in_guard {
                 true => InGuard,
                 false => NotInGuard,
@@ -877,7 +894,7 @@ fn gen_expr<RngType: rand::Rng>(
                 false => AnyDeterminism,
             };
             let maybe_fun_information =
-                env.pick_function(rng, &ctx.expected_type, determinism, in_guard, Local);
+                env.pick_function(rng, wanted_type, determinism, in_guard, Local);
             let (name, function_type) = match maybe_fun_information {
                 None => return None,
                 Some(FunctionInformation { name, t, .. }) => (name.clone(), t.clone()),
@@ -889,17 +906,18 @@ fn gen_expr<RngType: rand::Rng>(
                 NotSafeToReuse,
                 KeepUnion,
                 arity,
-                |env, i| recurse_any_expr(function_type.arg_types[i], rng, m, ctx, env, &mut size),
+                |env, i| recurse_any_expr(&function_type.arg_types[i], rng, m, ctx, env, &mut size),
             );
             m.add_expr(Expr::LocalCall(name, args), function_type.return_type)
         }
-        ExprKind::RemoteCall => {
+        ExprKind::RemoteCall if ctx.may_recurse() && !ctx.is_in_guard => {
+            // TODO: share some of that code with ExprKind::LocalCall
             let determinism = match ctx.deterministic {
                 true => DeterministicOnly,
                 false => AnyDeterminism,
             };
             let maybe_fun_information =
-                env.pick_function(rng, &ctx.expected_type, determinism, NotInGuard, Remote);
+                env.pick_function(rng, wanted_type, determinism, NotInGuard, Remote);
             let (module_name, name, function_type) = match maybe_fun_information {
                 None => return None,
                 Some(FunctionInformation {
@@ -916,14 +934,28 @@ fn gen_expr<RngType: rand::Rng>(
                 NotSafeToReuse,
                 KeepUnion,
                 arity,
-                |env, i| recurse_any_expr(function_type.arg_types[i], rng, m, ctx, env, &mut size),
+                |env, i| recurse_any_expr(&function_type.arg_types[i], rng, m, ctx, env, &mut size),
             );
             m.add_expr(
                 Expr::RemoteCall(module_name, name, args),
                 function_type.return_type,
             )
         }
-        ExprKind::Tuple => {
+        ExprKind::Tuple if ctx.may_recurse() => {
+            let arg_types = get_tuple_subtypes(rng, wanted_type)?;
+            let arity = arg_types.len();
+            let args = env.with_multi_scope_auto(
+                MultiScopeKind::Expr,
+                NoShadowing,
+                NotSafeToReuse,
+                KeepUnion,
+                arity,
+                |env, i| recurse_any_expr(&arg_types[i], rng, m, ctx, env, &mut size),
+            );
+            m.add_expr(Expr::Tuple(args), Tuple(arg_types))
+        }
+        ExprKind::List if ctx.may_recurse() => {
+            let arg_type = get_list_subtype(wanted_type)?;
             let arity = choose_arity(rng);
             let args = env.with_multi_scope_auto(
                 MultiScopeKind::Expr,
@@ -931,28 +963,17 @@ fn gen_expr<RngType: rand::Rng>(
                 NotSafeToReuse,
                 KeepUnion,
                 arity,
-                |env, _| recurse_any_expr(Any, rng, m, ctx, env, &mut size),
+                |env, _| recurse_any_expr(&arg_type, rng, m, ctx, env, &mut size),
             );
-            m.add_expr(Expr::Tuple(args), Tuple)
+            m.add_expr(Expr::List(args), List(Box::new(arg_type)))
         }
-        ExprKind::List => {
-            let arity = choose_arity(rng);
-            let args = env.with_multi_scope_auto(
-                MultiScopeKind::Expr,
-                NoShadowing,
-                NotSafeToReuse,
-                KeepUnion,
-                arity,
-                |env, _| recurse_any_expr(Any, rng, m, ctx, env, &mut size),
-            );
-            m.add_expr(Expr::List(args), List)
+        ExprKind::Case if ctx.may_recurse() && !ctx.is_in_guard => {
+            let e = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
+            let e_type = m.expr_type(e).clone();
+            let cases = gen_cases(&e_type, wanted_type, rng, m, ctx, env, &mut size);
+            m.add_expr(Expr::Case(e, cases), wanted_type.clone()) // TODO: get the actual type from the cases
         }
-        ExprKind::Case => {
-            let e = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
-            let cases = gen_cases(*m.expr_type(e), rng, m, ctx, env, &mut size);
-            m.add_expr(Expr::Case(e, cases), Any)
-        }
-        ExprKind::Try => {
+        ExprKind::Try if ctx.may_recurse() && !ctx.is_in_guard => {
             // See https://github.com/erlang/otp/issues/6598 for the scoping rules involved in this construct.
             // The most tricky is the combination of these things:
             //   1) variables bound in the `try` section are bound in the `of` section
@@ -962,6 +983,7 @@ fn gen_expr<RngType: rand::Rng>(
             // So I give up on 2 to have 1 and 3.
             let (exprs, of) = env.with_single_scope(NoShadowing, Discard(NotSafeToReuse), |env| {
                 let exprs = gen_body(
+                    wanted_type,
                     rng,
                     m,
                     ctx.for_recursion_with_spent_size(size),
@@ -969,8 +991,17 @@ fn gen_expr<RngType: rand::Rng>(
                     &mut size,
                 );
 
+                let exprs_type = m.body_type(exprs).clone();
                 let of = if rng.gen::<bool>() {
-                    Some(gen_cases(*m.body_type(exprs), rng, m, ctx, env, &mut size))
+                    Some(gen_cases(
+                        &exprs_type,
+                        wanted_type,
+                        rng,
+                        m,
+                        ctx,
+                        env,
+                        &mut size,
+                    ))
                 } else {
                     None
                 };
@@ -987,7 +1018,7 @@ fn gen_expr<RngType: rand::Rng>(
                 // FIXME: this is not perfect, it should also sometimes generate classes and stacktraces
                 Some(
                     env.with_single_scope(NoShadowing, Discard(NotSafeToReuse), |env| {
-                        gen_cases(Any, rng, m, ctx, env, &mut size)
+                        gen_cases(&Any, wanted_type, rng, m, ctx, env, &mut size)
                     }),
                 )
             } else {
@@ -998,6 +1029,7 @@ fn gen_expr<RngType: rand::Rng>(
                 Some(
                     env.with_single_scope(NoShadowing, Discard(NotSafeToReuse), |env| {
                         gen_body(
+                            &Any,
                             rng,
                             m,
                             ctx.for_recursion_with_spent_size(size),
@@ -1010,22 +1042,26 @@ fn gen_expr<RngType: rand::Rng>(
                 None
             };
 
-            m.add_expr(Expr::Try(exprs, of, catch, after), Any)
+            m.add_expr(
+                Expr::Try(exprs, of, catch, after),
+                m.body_type(exprs).clone(),
+            )
         }
-        ExprKind::Maybe => {
+        ExprKind::Maybe if ctx.may_recurse() && !ctx.is_in_guard && ctx.maybe_is_allowed => {
             // "None of the variables bound in a maybe block must be used in the else clauses.
             //  None of the variables bound in the else clauses must be used in the code that follows the maybe block."
             // and "None of the variables bound in a maybe block must be used in the code that follows the block."
             let arity = choose_arity(rng) + 1;
             let exprs = env.with_single_scope(NoShadowing, Discard(NotSafeToReuse), |env| {
+                // TODO: the last one should have type wanted_type rather than Any
                 make_vec(arity, || {
                     if rng.gen::<bool>() {
-                        let e = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
+                        let e = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                         // TODO: should be the type of e instead
-                        let p = recurse_any_pattern(Any, rng, m, ctx, env, &mut size);
+                        let p = recurse_any_pattern(&Any, rng, m, ctx, env, &mut size);
                         MaybeExpr::MaybeAssignment(p, e)
                     } else {
-                        let e = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
+                        let e = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                         MaybeExpr::Normal(e)
                     }
                 })
@@ -1034,7 +1070,7 @@ fn gen_expr<RngType: rand::Rng>(
             let else_section = if rng.gen::<bool>() {
                 Some(
                     env.with_single_scope(NoShadowing, Discard(NotSafeToReuse), |env| {
-                        gen_cases(Any, rng, m, ctx, env, &mut size)
+                        gen_cases(&Any, wanted_type, rng, m, ctx, env, &mut size)
                     }),
                 )
             } else {
@@ -1042,101 +1078,103 @@ fn gen_expr<RngType: rand::Rng>(
             };
             m.add_expr(Expr::Maybe(exprs, else_section), Any)
         }
-        ExprKind::Catch => {
+        // stacktraces are imprecise in interpreter mode, and captured by catch
+        ExprKind::Catch if ctx.may_recurse() && !ctx.is_in_guard && !ctx.deterministic => {
             // Bindings in a catch expression are always unsafe to use out of it
             env.with_single_scope(NoShadowing, Discard(NotSafeToReuse), |env| {
-                let arg = recurse_any_expr(ctx.expected_type, rng, m, ctx, env, &mut size);
-                m.add_expr(Expr::Catch(arg), *m.expr_type(arg))
+                let arg = recurse_any_expr(wanted_type, rng, m, ctx, env, &mut size);
+                m.add_expr(Expr::Catch(arg), m.expr_type(arg).clone())
             })
         }
-        ExprKind::Comparison => {
+        ExprKind::Comparison if ctx.may_recurse() && Boolean.is_subtype_of(wanted_type) => {
             let op = [Eq, NEq, LTE, LT, GTE, GT, ExactlyEq, ExactlyNEq]
                 .into_iter()
                 .choose(rng)
                 .unwrap();
             env.with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
-                let e1 = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
+                let e1 = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                 env.shift_to_sibling(NotSafeToReuse);
-                let e2 = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
+                let e2 = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                 m.add_expr(Expr::BinaryOperation(op, e1, e2), Boolean)
             })
         }
-        ExprKind::BinaryIntegerOp => {
+        ExprKind::BinaryIntegerOp if ctx.may_recurse() && Integer.is_subtype_of(wanted_type) => {
             let op = [Div, Rem, BAnd, BOr, BXor, BSl, BSr]
                 .into_iter()
                 .choose(rng)
                 .unwrap();
             env.with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
-                let e1 = recurse_any_expr(Integer, rng, m, ctx, env, &mut size);
+                let e1 = recurse_any_expr(&Integer, rng, m, ctx, env, &mut size);
                 env.shift_to_sibling(NotSafeToReuse);
-                let e2 = recurse_any_expr(Integer, rng, m, ctx, env, &mut size);
+                let e2 = recurse_any_expr(&Integer, rng, m, ctx, env, &mut size);
                 m.add_expr(Expr::BinaryOperation(op, e1, e2), Integer)
             })
         }
-        ExprKind::BinaryNumberOp => {
+        ExprKind::BinaryNumberOp if ctx.may_recurse() && Number.is_subtype_of(wanted_type) => {
             let op = [BinaryPlus, BinaryMinus, Mult, Slash]
                 .into_iter()
                 .choose(rng)
                 .unwrap();
             env.with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
-                let e1 = recurse_any_expr(Number, rng, m, ctx, env, &mut size);
+                let e1 = recurse_any_expr(&Number, rng, m, ctx, env, &mut size);
                 env.shift_to_sibling(NotSafeToReuse);
-                let e2 = recurse_any_expr(Number, rng, m, ctx, env, &mut size);
+                let e2 = recurse_any_expr(&Number, rng, m, ctx, env, &mut size);
                 m.add_expr(Expr::BinaryOperation(op, e1, e2), Number)
             })
         }
-        ExprKind::BinaryBooleanOp => {
+        ExprKind::BinaryBooleanOp if ctx.may_recurse() && Boolean.is_subtype_of(wanted_type) => {
             let op = [And, Or, Xor].into_iter().choose(rng).unwrap();
             env.with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
-                let e1 = recurse_any_expr(Boolean, rng, m, ctx, env, &mut size);
+                let e1 = recurse_any_expr(&Boolean, rng, m, ctx, env, &mut size);
                 env.shift_to_sibling(NotSafeToReuse);
-                let e2 = recurse_any_expr(Boolean, rng, m, ctx, env, &mut size);
+                let e2 = recurse_any_expr(&Boolean, rng, m, ctx, env, &mut size);
                 m.add_expr(Expr::BinaryOperation(op, e1, e2), Boolean)
             })
         }
-        ExprKind::BinaryListOp => {
+        ExprKind::BinaryListOp if ctx.may_recurse() && !ctx.is_in_guard => {
+            let list_subtype = get_list_subtype(wanted_type)?;
             let op = [PlusPlus, MinusMinus].into_iter().choose(rng).unwrap();
             env.with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
-                let e1 = recurse_any_expr(List, rng, m, ctx, env, &mut size);
+                let e1 = recurse_any_expr(&list_subtype, rng, m, ctx, env, &mut size);
                 env.shift_to_sibling(NotSafeToReuse);
-                let e2 = recurse_any_expr(List, rng, m, ctx, env, &mut size);
-                m.add_expr(Expr::BinaryOperation(op, e1, e2), List)
+                let e2 = recurse_any_expr(&list_subtype, rng, m, ctx, env, &mut size);
+                m.add_expr(Expr::BinaryOperation(op, e1, e2), list_subtype.clone())
             })
         }
-        ExprKind::ShortCircuitOp => {
-            let e1 = recurse_any_expr(Boolean, rng, m, ctx, env, &mut size);
+        ExprKind::ShortCircuitOp if ctx.may_recurse() => {
+            let e1 = recurse_any_expr(&Boolean, rng, m, ctx, env, &mut size);
             // Important: after `false orelse (X = 42)`, X is not set !
             let e2 = env.with_single_scope(NoShadowing, Discard(NotSafeToReuse), |env| {
-                recurse_any_expr(ctx.expected_type, rng, m, ctx, env, &mut size)
+                recurse_any_expr(wanted_type, rng, m, ctx, env, &mut size)
             });
             let op = [AndAlso, OrElse].iter().choose(rng).unwrap();
             m.add_expr(
                 Expr::BinaryOperation(*op, e1, e2),
-                type_union(&Boolean, &ctx.expected_type),
+                type_union(m.expr_type(e1), m.expr_type(e2)),
             )
         }
-        ExprKind::UnaryIntegerBNot => {
-            let e = recurse_any_expr(Integer, rng, m, ctx, env, &mut size);
+        ExprKind::UnaryIntegerBNot if ctx.may_recurse() && Integer.is_subtype_of(wanted_type) => {
+            let e = recurse_any_expr(&Integer, rng, m, ctx, env, &mut size);
             m.add_expr(Expr::UnaryOperation(BitwiseNot, e), Integer)
         }
-        ExprKind::UnaryBooleanNot => {
-            let e = recurse_any_expr(Boolean, rng, m, ctx, env, &mut size);
+        ExprKind::UnaryBooleanNot if ctx.may_recurse() && Boolean.is_subtype_of(wanted_type) => {
+            let e = recurse_any_expr(&Boolean, rng, m, ctx, env, &mut size);
             m.add_expr(Expr::UnaryOperation(BooleanNot, e), Boolean)
         }
-        ExprKind::UnaryNumberOp => {
-            let e = recurse_any_expr(Number, rng, m, ctx, env, &mut size);
+        ExprKind::UnaryNumberOp if ctx.may_recurse() && Number.is_subtype_of(wanted_type) => {
+            let e = recurse_any_expr(&Number, rng, m, ctx, env, &mut size);
             let op = [UnaryPlus, UnaryMinus].iter().choose(rng).unwrap();
             m.add_expr(Expr::UnaryOperation(*op, e), Number)
         }
-        ExprKind::Assignment => {
+        ExprKind::Assignment if ctx.may_recurse() && !ctx.is_in_guard => {
             // Note that we build the expression before the pattern to match the order in which variables are assigned
             // In particular, `<<A:B>> = begin B = 8, <<42:8>> end` works.
-            let e = recurse_any_expr(ctx.expected_type, rng, m, ctx, env, &mut size);
+            let e = recurse_any_expr(wanted_type, rng, m, ctx, env, &mut size);
             let t = m.expr_type(e).clone();
-            let p = recurse_any_pattern(t, rng, m, ctx, env, &mut size);
+            let p = recurse_any_pattern(&t, rng, m, ctx, env, &mut size);
             m.add_expr(Expr::Assignment(p, e), t)
         }
-        ExprKind::MapLiteral => {
+        ExprKind::MapLiteral if Map.is_subtype_of(wanted_type) => {
             let arity = if ctx.may_recurse() {
                 choose_arity(rng)
             } else {
@@ -1149,35 +1187,35 @@ fn gen_expr<RngType: rand::Rng>(
                 KeepUnion,
                 arity,
                 |env, _| {
-                    let k = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
+                    let k = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                     env.shift_to_sibling(NotSafeToReuse);
-                    let v = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
+                    let v = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                     (k, v)
                 },
             );
             m.add_expr(Expr::MapLiteral(mappings), Map)
         }
-        ExprKind::MapInsertion => {
-            env.with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
-                let map = recurse_any_expr(Map, rng, m, ctx, env, &mut size);
+        ExprKind::MapInsertion if ctx.may_recurse() && Map.is_subtype_of(wanted_type) => env
+            .with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
+                let map = recurse_any_expr(&Map, rng, m, ctx, env, &mut size);
                 env.shift_to_sibling(NotSafeToReuse);
-                let k = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
+                let k = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                 env.shift_to_sibling(NotSafeToReuse);
-                let v = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
+                let v = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                 m.add_expr(Expr::MapInsertion(map, k, v), Map)
-            })
-        }
-        ExprKind::MapUpdate => {
-            env.with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
-                let map = recurse_any_expr(Map, rng, m, ctx, env, &mut size);
+            }),
+        // TODO: share some code between MapInsertion and MapUpdate
+        ExprKind::MapUpdate if ctx.may_recurse() && Map.is_subtype_of(wanted_type) => env
+            .with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
+                let map = recurse_any_expr(&Map, rng, m, ctx, env, &mut size);
                 env.shift_to_sibling(NotSafeToReuse);
-                let k = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
+                let k = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                 env.shift_to_sibling(NotSafeToReuse);
-                let v = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
+                let v = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                 m.add_expr(Expr::MapUpdate(map, k, v), Map)
-            })
-        }
-        ExprKind::BitstringConstruction => {
+            }),
+        // may_recurse is not needed as the bitstring may be empty.
+        ExprKind::BitstringConstruction if Bitstring.is_subtype_of(wanted_type) => {
             // FIXME: abstract away this pattern
             let arity = if ctx.may_recurse() {
                 choose_arity(rng)
@@ -1193,14 +1231,14 @@ fn gen_expr<RngType: rand::Rng>(
                 |env, _| {
                     let kind = pick_type_specifier_kind(rng);
                     let t = type_specifier_kind_to_type_approximation(kind);
-                    let value = recurse_any_expr(t, rng, m, ctx, env, size_to_incr);
+                    let value = recurse_any_expr(&t, rng, m, ctx, env, size_to_incr);
                     env.shift_to_sibling(NotSafeToReuse);
                     let size_expr = match kind {
                         TypeSpecifierKind::Utf8
                         | TypeSpecifierKind::Utf16
                         | TypeSpecifierKind::Utf32 => None,
                         _ if rng.gen::<bool>() => None,
-                        _ => Some(recurse_any_expr(Integer, rng, m, ctx, env, size_to_incr)),
+                        _ => Some(recurse_any_expr(&Integer, rng, m, ctx, env, size_to_incr)),
                     };
                     let specifier = gen_type_specifier(
                         rng, kind, &size_expr, /* signedness_allowed = */ false,
@@ -1210,7 +1248,16 @@ fn gen_expr<RngType: rand::Rng>(
             );
             m.add_expr(Expr::BitstringConstruction(elements), Bitstring)
         }
-        ExprKind::ListComprehension | ExprKind::BitstringComprehension => {
+        ExprKind::ListComprehension | ExprKind::BitstringComprehension
+            if ctx.may_recurse() && !ctx.is_in_guard =>
+        {
+            // TODO: rewrite this in a nicer way (no matching three times in a row on choice !)
+            let bottom_list = List(Box::new(Bottom));
+            match choice {
+                ExprKind::ListComprehension if bottom_list.is_subtype_of(wanted_type) => (),
+                ExprKind::BitstringComprehension if Bitstring.is_subtype_of(wanted_type) => (),
+                _ => return None,
+            }
             // Note: the scoping rules for comprehensions are both subtle and poorly documented
             // See https://github.com/erlang/otp/issues/6454 for an example
             // Here are the rules as I've been able to find from tests and the documentation:
@@ -1228,13 +1275,13 @@ fn gen_expr<RngType: rand::Rng>(
                     elements.push(gen_comprehension_element(rng, m, ctx, env, &mut size));
                 }
                 // TODO: for Bitstring kind, type should be one of Number or Bitstring
-                recurse_any_expr(Any, rng, m, ctx, env, &mut size)
+                recurse_any_expr(&Any, rng, m, ctx, env, &mut size)
             });
 
             match choice {
                 ExprKind::ListComprehension => m.add_expr(
                     Expr::Comprehension(ComprehensionKind::List, value, elements),
-                    List,
+                    List(Box::new(Any)),
                 ),
                 ExprKind::BitstringComprehension => m.add_expr(
                     Expr::Comprehension(ComprehensionKind::Bitstring, value, elements),
@@ -1243,7 +1290,12 @@ fn gen_expr<RngType: rand::Rng>(
                 _ => unreachable!(),
             }
         }
-        ExprKind::MapComprehension => {
+        ExprKind::MapComprehension
+            if ctx.may_recurse()
+                && !ctx.is_in_guard
+                && ctx.map_comprehensions_are_allowed
+                && Map.is_subtype_of(wanted_type) =>
+        {
             let arity = choose_arity(rng) + 1;
             let mut elements = Vec::new();
             let (key, value) = env.with_single_scope(NoShadowing, Discard(SafeToReuse), |env| {
@@ -1251,15 +1303,17 @@ fn gen_expr<RngType: rand::Rng>(
                     elements.push(gen_comprehension_element(rng, m, ctx, env, &mut size));
                 }
                 env.with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
-                    let k = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
+                    let k = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                     env.shift_to_sibling(NotSafeToReuse);
-                    let v = recurse_any_expr(Any, rng, m, ctx, env, &mut size);
+                    let v = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                     (k, v)
                 })
             });
             m.add_expr(Expr::MapComprehension(key, value, elements), Map)
         }
-        ExprKind::Fun => {
+        ExprKind::Fun
+            if ctx.may_recurse() && !ctx.is_in_guard && Fun.is_subtype_of(wanted_type) =>
+        {
             // NoShadowing is important because the function bodies are not allowed to shadow variables from outside the function.
             // Consider the following:
             // ```
@@ -1306,10 +1360,11 @@ fn gen_expr<RngType: rand::Rng>(
                 m.add_expr(Expr::Fun(fun_var_name, clauses), Fun)
             })
         }
-        ExprKind::Block => {
-            let b = gen_body(rng, m, ctx, env, &mut size);
-            m.add_expr(Expr::Block(b), *m.body_type(b))
+        ExprKind::Block if ctx.may_recurse() && !ctx.is_in_guard => {
+            let b = gen_body(wanted_type, rng, m, ctx, env, &mut size);
+            m.add_expr(Expr::Block(b), m.body_type(b).clone())
         }
+        _ => return None,
     };
     *size_to_incr += expr_id.size(m);
     Some(expr_id)
@@ -1378,7 +1433,8 @@ fn choose_random_atom<RngType: rand::Rng>(rng: &mut RngType) -> String {
 }
 
 fn gen_cases<RngType: rand::Rng>(
-    t: TypeApproximation,
+    pattern_type: &TypeApproximation,
+    body_type: &TypeApproximation,
     rng: &mut RngType,
     m: &mut Module,
     ctx: Context,
@@ -1394,16 +1450,16 @@ fn gen_cases<RngType: rand::Rng>(
         KeepIntersection,
         arity,
         |env, _| {
-            let pattern = recurse_any_pattern(t, rng, m, ctx, env, current_node_size);
+            let pattern = recurse_any_pattern(pattern_type, rng, m, ctx, env, current_node_size);
             let guard = gen_guard(
                 rng,
                 m,
-                ctx.with_type(Boolean)
-                    .for_recursion_with_spent_size(*current_node_size),
+                ctx.for_recursion_with_spent_size(*current_node_size),
                 env,
                 current_node_size,
             );
             let body = gen_body(
+                body_type,
                 rng,
                 m,
                 ctx.for_recursion_with_spent_size(*current_node_size),
@@ -1417,6 +1473,7 @@ fn gen_cases<RngType: rand::Rng>(
 }
 
 fn gen_body<RngType: rand::Rng>(
+    wanted_type: &TypeApproximation,
     rng: &mut RngType,
     module: &mut Module,
     ctx: Context,
@@ -1426,10 +1483,10 @@ fn gen_body<RngType: rand::Rng>(
     let mut es = Vec::new();
     let mut size = 1;
     while size < ctx.allowed_size && rng.gen::<bool>() {
-        let e = recurse_any_expr(Any, rng, module, ctx, env, &mut size);
+        let e = recurse_any_expr(&Any, rng, module, ctx, env, &mut size);
         es.push(e);
     }
-    let e = recurse_any_expr(ctx.expected_type, rng, module, ctx, env, &mut size);
+    let e = recurse_any_expr(wanted_type, rng, module, ctx, env, &mut size);
     es.push(e);
     *size_to_incr += size;
     module.add_body(Body { exprs: es })
@@ -1442,7 +1499,6 @@ fn gen_guard<RngType: rand::Rng>(
     env: &mut Environment,
     size_to_incr: &mut ASTSize,
 ) -> GuardId {
-    assert!(ctx_arg.expected_type == Boolean);
     let ctx = ctx_arg.in_guard();
     let mut guard_seqs = Vec::new();
     let mut size = 1;
@@ -1451,7 +1507,7 @@ fn gen_guard<RngType: rand::Rng>(
         let mut guard_exprs = Vec::new();
         // And a guard sequence is made of 1 or more expressions.
         loop {
-            let e = recurse_any_expr(Boolean, rng, module, ctx, env, &mut size);
+            let e = recurse_any_expr(&Boolean, rng, module, ctx, env, &mut size);
             guard_exprs.push(e);
             if size >= ctx.allowed_size || rng.gen::<bool>() {
                 break;
@@ -1577,12 +1633,13 @@ fn gen_comprehension_element<RngType: rand::Rng>(
     let comprehension_element_kind = kinds.into_iter().choose(rng).unwrap();
     match comprehension_element_kind {
         ComprehensionElementKind::Filter => {
-            let e = recurse_any_expr(Boolean, rng, m, ctx, env, size_to_incr);
+            let e = recurse_any_expr(&Boolean, rng, m, ctx, env, size_to_incr);
             ComprehensionElement::Filter(e)
         }
         ComprehensionElementKind::ListGenerator => {
             let e = env.with_single_scope(NoShadowing, Discard(SafeToReuse), |env| {
-                recurse_any_expr(List, rng, m, ctx, env, size_to_incr)
+                // TODO: pick more precise type
+                recurse_any_expr(&List(Box::new(Any)), rng, m, ctx, env, size_to_incr)
             });
             let ctx = if env.disable_shadowing {
                 ctx.ban_bound_vars()
@@ -1590,13 +1647,13 @@ fn gen_comprehension_element<RngType: rand::Rng>(
                 ctx
             };
             let p = env.with_single_scope(Shadowing, Overwrite, |env| {
-                recurse_any_pattern(Any, rng, m, ctx, env, size_to_incr)
+                recurse_any_pattern(&Any, rng, m, ctx, env, size_to_incr)
             });
             ComprehensionElement::ListGenerator(p, e)
         }
         ComprehensionElementKind::BitstringGenerator => {
             let e = env.with_single_scope(NoShadowing, Discard(SafeToReuse), |env| {
-                recurse_any_expr(Bitstring, rng, m, ctx, env, size_to_incr)
+                recurse_any_expr(&Bitstring, rng, m, ctx, env, size_to_incr)
             });
             let ctx = if env.disable_shadowing {
                 ctx.ban_bound_vars()
@@ -1609,16 +1666,18 @@ fn gen_comprehension_element<RngType: rand::Rng>(
                     m,
                     ctx.for_recursion_with_spent_size(*size_to_incr)
                         .in_bitstring_generator(),
+                    &Any,
                     env,
                     size_to_incr,
                     PatternKind::Bitstring,
                 )
+                .unwrap()
             });
             ComprehensionElement::BitstringGenerator(p, e)
         }
         ComprehensionElementKind::MapGenerator => {
             let e = env.with_single_scope(NoShadowing, Discard(SafeToReuse), |env| {
-                recurse_any_expr(Map, rng, m, ctx, env, size_to_incr)
+                recurse_any_expr(&Map, rng, m, ctx, env, size_to_incr)
             });
             let ctx = if env.disable_shadowing {
                 ctx.ban_bound_vars()
@@ -1631,14 +1690,37 @@ fn gen_comprehension_element<RngType: rand::Rng>(
                     NoShadowing,
                     KeepUnion,
                     |env| {
-                        let k = recurse_any_pattern(Any, rng, m, ctx, env, size_to_incr);
+                        let k = recurse_any_pattern(&Any, rng, m, ctx, env, size_to_incr);
                         env.shift_to_sibling(SafeToReuse);
-                        let v = recurse_any_pattern(Any, rng, m, ctx, env, size_to_incr);
+                        let v = recurse_any_pattern(&Any, rng, m, ctx, env, size_to_incr);
                         (k, v)
                     },
                 )
             });
             ComprehensionElement::MapGenerator(k, v, e)
         }
+    }
+}
+
+// In this file rather than types.rs, because get_tuple_subtypes needs choose_arity.
+pub fn get_list_subtype(t: &TypeApproximation) -> Option<TypeApproximation> {
+    match t {
+        List(t) => Some((**t).clone()),
+        Any => Some(Any),
+        _ => None,
+    }
+}
+
+pub fn get_tuple_subtypes<RngType: rand::Rng>(
+    rng: &mut RngType,
+    t: &TypeApproximation,
+) -> Option<Vec<TypeApproximation>> {
+    match t {
+        Tuple(ts) => Some(ts.clone()),
+        Any | AnyTuple => {
+            let a = choose_arity(rng);
+            Some(make_vec(a, || Any))
+        }
+        _ => None,
     }
 }

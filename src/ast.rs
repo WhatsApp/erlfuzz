@@ -11,6 +11,7 @@ use UnaryOperator::*;
 
 use crate::core_types::*;
 use crate::generator::WrapperMode;
+use crate::types::write_list_strings;
 use crate::types::FunctionTypeApproximation;
 use crate::types::TypeApproximation;
 use crate::Config;
@@ -68,22 +69,6 @@ impl<'a, T: AstNode> fmt::Display for WithModuleRef<'a, T> {
 
 fn with_module<'a, T>(value: T, module: &'a Module) -> WithModuleRef<'a, T> {
     WithModuleRef { value, module }
-}
-
-fn write_list_strings<I: Iterator<Item = String>>(
-    f: &mut fmt::Formatter<'_>,
-    l: I,
-    separator: &str,
-) -> fmt::Result {
-    let mut is_first = true;
-    for x in l {
-        if !is_first {
-            write!(f, "{}", separator)?;
-        }
-        is_first = false;
-        write!(f, "{}", x)?;
-    }
-    Ok(())
 }
 
 fn write_list_ast_nodes<T: AstNode + Copy>(

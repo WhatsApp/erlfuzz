@@ -5,12 +5,9 @@
  */
 
 use crate::core_types::*;
-use crate::types::TypeApproximation;
-use crate::types::TypeApproximation::Any;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Context {
-    pub expected_type: TypeApproximation,
     pub is_in_guard: bool,
     // "binary fields without size are not allowed in patterns of bit string generators"
     pub is_in_bitstring_generator: bool,
@@ -26,7 +23,6 @@ pub struct Context {
 impl Context {
     pub fn new() -> Self {
         Context {
-            expected_type: Any,
             allowed_size: 0,
             recursion_depth: 0,
             max_recursion_depth: 0,
@@ -51,19 +47,10 @@ impl Context {
     pub fn may_recurse(&self) -> bool {
         self.recursion_depth < self.max_recursion_depth && self.allowed_size > 0
     }
-    pub fn allows_type(&self, t: TypeApproximation) -> bool {
-        t.is_subtype_of(&self.expected_type)
-    }
     pub fn for_recursion_with_spent_size(&self, size_reduction: i32) -> Self {
         Context {
             recursion_depth: self.recursion_depth + 1,
             allowed_size: self.allowed_size - size_reduction,
-            ..*self
-        }
-    }
-    pub fn with_type(&self, expected_type: TypeApproximation) -> Self {
-        Context {
-            expected_type,
             ..*self
         }
     }
