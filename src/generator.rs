@@ -1248,47 +1248,33 @@ fn gen_expr<RngType: rand::Rng>(
             );
             m.add_expr(Expr::BitstringConstruction(elements), Bitstring)
         }
-        ExprKind::ListComprehension | ExprKind::BitstringComprehension
-            if ctx.may_recurse() && !ctx.is_in_guard =>
+        ExprKind::ListComprehension
+            if ctx.may_recurse()
+                && !ctx.is_in_guard
+                && List(Box::new(Bottom)).is_subtype_of(wanted_type) =>
         {
-            // TODO: rewrite this in a nicer way (no matching three times in a row on choice !)
-            let bottom_list = List(Box::new(Bottom));
-            match choice {
-                ExprKind::ListComprehension if bottom_list.is_subtype_of(wanted_type) => (),
-                ExprKind::BitstringComprehension if Bitstring.is_subtype_of(wanted_type) => (),
-                _ => return None,
-            }
-            // Note: the scoping rules for comprehensions are both subtle and poorly documented
-            // See https://github.com/erlang/otp/issues/6454 for an example
-            // Here are the rules as I've been able to find from tests and the documentation:
-            // - Variables bound in a generator expression are only available in that expression
-            // - Variables bound by a generator pattern shadow any previously existing variable,
-            //     and are scoped until the end of the whole comprehension.
-            // - Variables bound in the final expression are also only usable within it
-            // Note that a pattern on the right-side of "<-" is not allowed to shadow existing variables,
-            //   only patterns on the left side are allowed to do so!
-            // Also note that while expressions in generators have special rules, expressions in filters follow the normal rules !
-            let arity = choose_arity(rng) + 1;
-            let mut elements = Vec::new();
-            let value = env.with_single_scope(NoShadowing, Discard(SafeToReuse), |env| {
-                for _i in 0..arity {
-                    elements.push(gen_comprehension_element(rng, m, ctx, env, &mut size));
-                }
-                // TODO: for Bitstring kind, type should be one of Number or Bitstring
-                recurse_any_expr(&Any, rng, m, ctx, env, &mut size)
-            });
-
-            match choice {
-                ExprKind::ListComprehension => m.add_expr(
-                    Expr::Comprehension(ComprehensionKind::List, value, elements),
-                    List(Box::new(Any)),
-                ),
-                ExprKind::BitstringComprehension => m.add_expr(
-                    Expr::Comprehension(ComprehensionKind::Bitstring, value, elements),
-                    Bitstring,
-                ),
-                _ => unreachable!(),
-            }
+            gen_comprehension(
+                rng,
+                m,
+                ctx,
+                env,
+                size_to_incr,
+                ComprehensionKind::List,
+                List(Box::new(Any)),
+            )
+        }
+        ExprKind::BitstringComprehension
+            if ctx.may_recurse() && !ctx.is_in_guard && Bitstring.is_subtype_of(wanted_type) =>
+        {
+            gen_comprehension(
+                rng,
+                m,
+                ctx,
+                env,
+                size_to_incr,
+                ComprehensionKind::Bitstring,
+                Bitstring,
+            )
         }
         ExprKind::MapComprehension
             if ctx.may_recurse()
@@ -1613,6 +1599,41 @@ fn gen_type_specifier<RngType: rand::Rng>(
         TypeSpecifierKind::Utf16 => TypeSpecifier::Utf16 { endianness },
         TypeSpecifierKind::Utf32 => TypeSpecifier::Utf32 { endianness },
     }
+}
+
+fn gen_comprehension<RngType: rand::Rng>(
+    rng: &mut RngType,
+    m: &mut Module,
+    ctx: Context,
+    env: &mut Environment,
+    size_to_incr: &mut ASTSize,
+    comprehension_kind: ComprehensionKind,
+    created_type: TypeApproximation,
+) -> ExprId {
+    // Note: the scoping rules for comprehensions are both subtle and poorly documented
+    // See https://github.com/erlang/otp/issues/6454 for an example
+    // Here are the rules as I've been able to find from tests and the documentation:
+    // - Variables bound in a generator expression are only available in that expression
+    // - Variables bound by a generator pattern shadow any previously existing variable,
+    //     and are scoped until the end of the whole comprehension.
+    // - Variables bound in the final expression are also only usable within it
+    // Note that a pattern on the right-side of "<-" is not allowed to shadow existing variables,
+    //   only patterns on the left side are allowed to do so!
+    // Also note that while expressions in generators have special rules, expressions in filters follow the normal rules !
+    let arity = choose_arity(rng) + 1;
+    let mut elements = Vec::new();
+    let value = env.with_single_scope(NoShadowing, Discard(SafeToReuse), |env| {
+        for _i in 0..arity {
+            elements.push(gen_comprehension_element(rng, m, ctx, env, size_to_incr));
+        }
+        // TODO: for Bitstring kind, type should be one of Number or Bitstring
+        recurse_any_expr(&Any, rng, m, ctx, env, size_to_incr)
+    });
+
+    m.add_expr(
+        Expr::Comprehension(comprehension_kind, value, elements),
+        created_type,
+    )
 }
 
 fn gen_comprehension_element<RngType: rand::Rng>(
