@@ -20,3 +20,4 @@ pub use generator::Config;
 pub use generator::WrapperMode;
 pub use reducer::reduce_module;
 pub use stdlib::get_erlang_functions;
+pub use stdlib::get_list_functions;

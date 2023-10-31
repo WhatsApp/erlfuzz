@@ -218,3 +218,63 @@ pub fn get_erlang_functions() -> &'static [(
     ("yield", DeterministicOnly, NotInGuard, Remote, Boolean, vec![]),
     ])
 }
+
+static LIST_FUNCTIONS: OnceLock<Vec<(&'static str, TypeApproximation, Vec<TypeApproximation>)>> =
+    OnceLock::new();
+
+#[rustfmt::skip]
+pub fn get_list_functions() -> &'static [(&'static str, TypeApproximation, Vec<TypeApproximation>)] {
+    LIST_FUNCTIONS.get_or_init(|| vec![
+        // all, any
+        ("append", List(Box::new(Any)), vec![List(Box::new(List(Box::new(Any))))]),
+        ("append", List(Box::new(Any)), vec![List(Box::new(Any)), List(Box::new(Any))]),
+        // Actual type is [atom() | integer() | float() | string()] -> string()
+        ("concat", List(Box::new(Integer)), vec![List(Box::new(Any))]),
+        ("delete", List(Box::new(Any)), vec![List(Box::new(Any)), Any]),
+        ("droplast", List(Box::new(Any)), vec![List(Box::new(Any))]),
+        // dropwhile
+        ("duplicate", List(Box::new(Any)), vec![Integer, Any]),
+        ("enumerate", List(Box::new(Tuple(vec![Integer, Any]))), vec![List(Box::new(Any))]),
+        ("enumerate", List(Box::new(Tuple(vec![Integer, Any]))), vec![List(Box::new(Any)), Integer]),
+        ("enumerate", List(Box::new(Tuple(vec![Integer, Any]))), vec![List(Box::new(Any)), Integer, Integer]),
+        // filter, filtermap
+        ("flatlength", Integer, vec![List(Box::new(Any))]),
+        // flatmap
+        ("flatten", List(Box::new(Any)), vec![List(Box::new(Any))]),
+        ("flatten", List(Box::new(Any)), vec![List(Box::new(Any)), List(Box::new(Any))]),
+        // foldl, foldr
+        ("join", List(Box::new(Any)), vec![Any, List(Box::new(Any))]),
+        // foreach, keydelete, keyfind, keymap, key...
+        ("last", Any, vec![List(Box::new(Any))]),
+        // map, mapfoldl, mapfoldr
+        ("max", Any, vec![List(Box::new(Any))]),
+        ("member", Boolean, vec![Any, List(Box::new(Any))]),
+        // merge, merge3
+        ("min", Any, vec![List(Box::new(Any))]),
+        ("nth", Any, vec![Integer, List(Box::new(Any))]),
+        ("nthtail", List(Box::new(Any)), vec![Integer, List(Box::new(Any))]),
+        // partition
+        ("prefix", Boolean, vec![List(Box::new(Any)), List(Box::new(Any))]),
+        ("reverse", List(Box::new(Any)), vec![List(Box::new(Any))]),
+        ("reverse", List(Box::new(Any)), vec![List(Box::new(Any)), List(Box::new(Any))]),
+        // search
+        ("seq", List(Box::new(Integer)), vec![Integer, Integer]),
+        ("seq", List(Box::new(Integer)), vec![Integer, Integer, Integer]),
+        ("sort", List(Box::new(Any)), vec![List(Box::new(Any))]),
+        // sort/2
+        ("split", Tuple(vec![List(Box::new(Any)), List(Box::new(Any))]), vec![Integer, List(Box::new(Any))]),
+        // splitwith
+        ("sublist", List(Box::new(Any)), vec![List(Box::new(Any)), Integer]),
+        ("sublist", List(Box::new(Any)), vec![List(Box::new(Any)), Integer, Integer]),
+        ("substract", List(Box::new(Any)), vec![List(Box::new(Any)), List(Box::new(Any))]),
+        ("suffix", Boolean, vec![List(Box::new(Any)), List(Box::new(Any))]),
+        ("sum", Number, vec![List(Box::new(Number))]),
+        // takewhile, ukeymerge, ukeysort, umerge, umerge3
+        ("unzip", Tuple(vec![List(Box::new(Any)), List(Box::new(Any))]), vec![List(Box::new(Tuple(vec![Any, Any])))]),
+        ("unzip3", Tuple(vec![List(Box::new(Any)), List(Box::new(Any)), List(Box::new(Any))]), vec![List(Box::new(Tuple(vec![Any, Any, Any])))]),
+        ("usort", List(Box::new(Any)), vec![List(Box::new(Any))]),
+        // usort/2, zip, zip3, zipwith, zipwith3
+        ("uniq", List(Box::new(Any)), vec![List(Box::new(Any))]),
+        // uniq/2
+    ])
+}
