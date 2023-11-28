@@ -31,6 +31,7 @@ pub enum TypeApproximation {
     EtsTableId,
     EtsTable,
     SpecificAtom(String),
+    Union(Vec<TypeApproximation>),
 }
 impl TypeApproximation {
     pub fn is_subtype_of(&self, other: &Self) -> bool {
@@ -38,6 +39,8 @@ impl TypeApproximation {
             return true;
         }
         match (self, other) {
+            (Union(ts1), _) => ts1.iter().all(|t| t.is_subtype_of(other)),
+            (_, Union(ts2)) => ts2.iter().any(|t| self.is_subtype_of(t)),
             (Bottom, _) => true,
             (_, Any) => true,
             (Integer, Number) => true,
@@ -66,6 +69,13 @@ impl TypeApproximation {
             return;
         }
         match (self, other) {
+            (Union(ts1), _) => {
+                ts1.iter_mut().for_each(|t| t.refine(other));
+                ts1.retain(|t| match t {
+                    Bottom => false,
+                    _ => true,
+                });
+            }
             (List(ref mut t1), List(t2)) => {
                 t1.refine(t2);
             }
@@ -128,6 +138,11 @@ impl fmt::Display for TypeApproximation {
             EtsTableId => write!(f, "ets:tid()"),
             EtsTable => write!(f, "ets:table()"),
             SpecificAtom(a) => write!(f, "'{}'", a),
+            Union(ts) => {
+                write!(f, "(")?;
+                write_list_strings(f, ts.iter().map(|t| t.to_string()), " | ")?;
+                write!(f, ")")
+            }
         }
     }
 }
@@ -152,6 +167,7 @@ pub fn type_union(left: &TypeApproximation, right: &TypeApproximation) -> TypeAp
             Boolean
         }
         (SpecificAtom(_), SpecificAtom(_)) => Atom,
+        // We could be more precise for Union, but it would risk blowing up the size of the types.
         _ => Any,
     }
 }
