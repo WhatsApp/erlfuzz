@@ -3,6 +3,7 @@
  * This source code is licensed under the Apache 2.0 license found in
  * the LICENSE file in the root directory of this source tree.
  */
+use core::cmp::max;
 use std::cmp::Eq;
 use std::fmt;
 
@@ -308,12 +309,12 @@ pub fn choose_type<RngType: rand::Rng>(rng: &mut RngType) -> TypeApproximation {
     .choose(rng)
     .unwrap();
     if let Union(_) = result {
-        let arity = choose_arity(rng);
+        let arity = max(1, choose_arity(rng));
         Union(make_vec(arity, || choose_type(rng)))
     } else if result == any_list && rng.gen::<bool>() {
         List(Box::new(choose_type(rng)))
     } else if result == AnyTuple && rng.gen::<bool>() {
-        let arity = choose_arity(rng);
+        let arity = max(1, choose_arity(rng));
         Tuple(make_vec(arity, || choose_type(rng)))
     } else {
         result
