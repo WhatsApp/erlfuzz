@@ -116,6 +116,7 @@ pub enum BinaryOperator {
     OrElse,
     PlusPlus,
     MinusMinus,
+    Send,
 }
 impl fmt::Display for BinaryOperator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -149,6 +150,7 @@ impl fmt::Display for BinaryOperator {
                 OrElse => "orelse",
                 PlusPlus => "++",
                 MinusMinus => "--",
+                Send => "!",
             }
         )
     }

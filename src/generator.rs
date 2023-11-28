@@ -692,6 +692,7 @@ enum ExprKind {
     Try,
     Maybe,
     Block,
+    Send,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -738,6 +739,7 @@ const ALL_EXPR_KINDS: &[ExprKind] = &[
     ExprKind::Try,
     ExprKind::Maybe,
     ExprKind::Block,
+    ExprKind::Send,
 ];
 
 fn expr_kind_weight(kind: ExprKind) -> u32 {
@@ -777,6 +779,7 @@ fn expr_kind_weight(kind: ExprKind) -> u32 {
         ExprKind::Try => 1,
         ExprKind::Maybe => 1,
         ExprKind::Block => 1,
+        ExprKind::Send => 1,
     }
 }
 
@@ -1349,6 +1352,18 @@ fn gen_expr<RngType: rand::Rng>(
         ExprKind::Block if ctx.may_recurse() && !ctx.is_in_guard => {
             let b = gen_body(wanted_type, rng, m, ctx, env, &mut size);
             m.add_expr(Expr::Block(b), m.body_type(b).clone())
+        }
+        ExprKind::Send if ctx.may_recurse() && !ctx.is_in_guard => {
+            // FIXME: "Expr1 must evaluate to a pid, an alias (reference), a port, a registered name (atom), or a tuple {Name,Node}. Name is an atom and Node is a node name, also an atom."
+            env.with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
+                let receiver = recurse_any_expr(&Pid, rng, m, ctx, env, &mut size);
+                env.shift_to_sibling(NotSafeToReuse);
+                let message = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
+                m.add_expr(
+                    Expr::BinaryOperation(Send, receiver, message),
+                    m.expr_type(message).clone(),
+                )
+            })
         }
         _ => return None,
     };
