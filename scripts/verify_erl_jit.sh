@@ -60,7 +60,7 @@ main() {
     rm "${emu_output_filename}"
     rm "${jit_output_filename}"
     rm "${beam_filename}"
-    exit "${emu_result}"
+    exit "${jit_result}"
   fi
   # And finally compare the results
   # We must first remove the effectively random numbers that are attached to Funs.
