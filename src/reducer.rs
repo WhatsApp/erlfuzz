@@ -84,6 +84,7 @@ fn try_trivialize_func_decl<F: Fn(&Module) -> bool>(
         &mut module.functions[func_decl_id].clauses,
         vec![trivial_clause_id],
     );
+    let old_visible_spec = mem::replace(&mut module.functions[func_decl_id].visible_spec, false);
     let text = format!(
         "replacing function declaration {}/{} by a trivial one",
         &module.functions[func_decl_id].name, arity
@@ -93,7 +94,10 @@ fn try_trivialize_func_decl<F: Fn(&Module) -> bool>(
         run,
         old_clauses.size(module),
         &text,
-        |m: &mut Module| m.functions[func_decl_id].clauses = old_clauses,
+        |m: &mut Module| {
+            m.functions[func_decl_id].clauses = old_clauses;
+            m.functions[func_decl_id].visible_spec = old_visible_spec;
+        },
     )
 }
 
