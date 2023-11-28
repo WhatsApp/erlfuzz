@@ -3,6 +3,7 @@
  * This source code is licensed under the Apache 2.0 license found in
  * the LICENSE file in the root directory of this source tree.
  */
+use std::collections::HashMap;
 use std::mem;
 
 use log::debug;
@@ -41,6 +42,76 @@ pub fn reduce_module<F: Fn(&Module) -> bool>(module: &mut Module, run: &F) {
             &text,
             |m: &mut Module| m.functions.insert(i, func_decl),
         );
+    }
+
+    info!("      Trying to eliminate function parameters");
+    let new_num_functions = module.functions.len();
+    let mut fun_name_to_index = HashMap::new();
+    for i in 0..new_num_functions {
+        let func = &module.functions[i];
+        fun_name_to_index.insert((func.name.clone(), func.arity), i);
+    }
+    let mut fun_to_calls = make_vec(new_num_functions, || Vec::new());
+    for expr_id in module.all_expr_ids() {
+        match module.expr(expr_id) {
+            Expr::LocalCall(fun_name, args) => {
+                if let Some(fun_index) = fun_name_to_index
+                    .get(&(fun_name.clone(), args.len()))
+                    .copied()
+                {
+                    fun_to_calls[fun_index].push(expr_id);
+                }
+            }
+            _ => continue,
+        }
+    }
+    for fun_index in 0..new_num_functions {
+        let func_decl = &module.functions[fun_index];
+        if func_decl.clauses.len() > 1 {
+            continue;
+        }
+        let arity = func_decl.arity;
+        let name = func_decl.name.clone();
+        let clause_id = func_decl.clauses[0];
+        for arg_index in (0..arity).rev() {
+            let func_clause_ref = module.function_clause(clause_id);
+            match module.pattern(func_clause_ref.args[arg_index]) {
+                Pattern::Underscore() => (),
+                _ => continue,
+            }
+            let module_snapshot = module.clone();
+            let func_clause = module.function_clause_mut(clause_id);
+            let _ = func_clause.args.remove(arg_index);
+            module.functions[fun_index].arity -= 1;
+            let _ = module.functions[fun_index]
+                .function_type
+                .arg_types
+                .remove(arg_index);
+            let _ = module.functions[fun_index].clause_types[0]
+                .arg_types
+                .remove(arg_index);
+            for call_id in fun_to_calls[fun_index].iter().copied() {
+                let call = module.expr_mut(call_id);
+                match call {
+                    Expr::LocalCall(_, ref mut call_args) => {
+                        call_args.remove(arg_index);
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            let text = format!(
+                "removing parameter #{} from function declaration {}/{}",
+                arg_index, name, arity
+            );
+            let _ = try_reduction_or_else(
+                module,
+                run,
+                // Note that this win size is an overestimation, since it also counts calls that have been eliminated.
+                (fun_to_calls[fun_index].len() + 1) as ASTSize,
+                &text,
+                |m: &mut Module| *m = module_snapshot,
+            );
+        }
     }
 }
 

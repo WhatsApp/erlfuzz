@@ -57,8 +57,8 @@ impl<T: AstNode> AstNode for Option<T> {
     }
 }
 
-struct WithModuleRef<'a, T> {
-    module: &'a Module<'a>,
+pub struct WithModuleRef<'a, T> {
+    module: &'a Module,
     value: T,
 }
 impl<'a, T: AstNode> fmt::Display for WithModuleRef<'a, T> {
@@ -67,7 +67,7 @@ impl<'a, T: AstNode> fmt::Display for WithModuleRef<'a, T> {
     }
 }
 
-fn with_module<'a, T>(value: T, module: &'a Module) -> WithModuleRef<'a, T> {
+pub fn with_module<'a, T>(value: T, module: &'a Module) -> WithModuleRef<'a, T> {
     WithModuleRef { value, module }
 }
 
@@ -764,7 +764,7 @@ impl AstNode for Pattern {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Guard {
     pub guard_seqs: Vec<GuardSeqId>,
 }
@@ -784,7 +784,7 @@ impl AstNode for Guard {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct GuardSeq {
     pub guard_exprs: Vec<ExprId>,
 }
@@ -799,7 +799,7 @@ impl AstNode for GuardSeq {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FunctionClause {
     pub name: String,
     pub args: Vec<PatternId>,
@@ -824,7 +824,7 @@ impl AstNode for FunctionClause {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FunctionDeclaration {
     // Must be non-empty
     // Each clause must have the right arity and name
@@ -858,9 +858,9 @@ impl AstNode for FunctionDeclaration {
     }
 }
 
-#[derive(Debug)]
-pub struct Module<'a> {
-    pub module_name: &'a str,
+#[derive(Clone, Debug)]
+pub struct Module {
+    pub module_name: String,
     pub initial_seed: u64,
     pub functions: Vec<FunctionDeclaration>,
     config: Config,
@@ -872,8 +872,8 @@ pub struct Module<'a> {
     guard_seqs: Vec<GuardSeq>,
     guards: Vec<Guard>,
 }
-impl fmt::Display for Module<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl fmt::Display for Module {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let config = self.config;
         write!(
             f,
@@ -936,15 +936,15 @@ impl fmt::Display for Module<'_> {
         Ok(())
     }
 }
-impl<'a> Module<'a> {
+impl Module {
     pub fn new(
-        module_name: &'a str,
+        module_name: &str,
         initial_seed: u64,
         config: Config,
         functions: Vec<FunctionDeclaration>,
     ) -> Self {
         Self {
-            module_name,
+            module_name: module_name.to_owned(),
             initial_seed,
             config,
             functions,
@@ -968,6 +968,9 @@ impl<'a> Module<'a> {
         self.expr_types.push(t);
         assert!(self.exprs.len() == self.expr_types.len());
         ExprId((self.exprs.len() - 1).try_into().unwrap())
+    }
+    pub fn all_expr_ids(&self) -> impl Iterator<Item = ExprId> {
+        (0..self.exprs.len()).map(|i| ExprId(i as u32))
     }
     pub fn expr_type(&self, id: ExprId) -> &TypeApproximation {
         &self.expr_types[id.0 as usize]

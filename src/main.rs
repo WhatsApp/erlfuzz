@@ -233,7 +233,7 @@ fn fuzz_module_and_store_results(
     tmp_directory: &str,
     interesting_directory: &str,
 ) -> bool {
-    let filepath = make_filepath(tmp_directory, module.module_name, ".erl");
+    let filepath = make_filepath(tmp_directory, &module.module_name, ".erl");
     let output = run_command_on_module(command, &module, &filepath);
     if output.status.success() {
         info!(
@@ -246,7 +246,7 @@ fn fuzz_module_and_store_results(
             .unwrap();
         false
     } else {
-        let new_filepath = make_filepath(interesting_directory, module.module_name, ".erl");
+        let new_filepath = make_filepath(interesting_directory, &module.module_name, ".erl");
         warn!(
             "INTERESTING: storing this test case as {}",
             new_filepath.display()
@@ -255,8 +255,8 @@ fn fuzz_module_and_store_results(
             .args([&filepath, &new_filepath])
             .output()
             .unwrap();
-        let stderr_filepath = make_filepath(interesting_directory, module.module_name, ".stderr");
-        let stdout_filepath = make_filepath(interesting_directory, module.module_name, ".stdout");
+        let stderr_filepath = make_filepath(interesting_directory, &module.module_name, ".stderr");
+        let stdout_filepath = make_filepath(interesting_directory, &module.module_name, ".stdout");
         let _ = fs::write(
             &stderr_filepath,
             std::str::from_utf8(&output.stderr).unwrap(),
@@ -277,7 +277,7 @@ fn reduce_module_and_store_results(
     num_lines: usize,
     max_distance: u32,
 ) {
-    let filepath = make_filepath(tmp_directory, module.module_name, ".erl");
+    let filepath = make_filepath(tmp_directory, &module.module_name, ".erl");
     let expected_output = run_command_on_module(command, &module, &filepath);
     if expected_output.status.success() {
         error!("Error: the command does not fail on the initial module! ");
@@ -291,7 +291,7 @@ fn reduce_module_and_store_results(
             .unwrap();
         is_output_similar(&output, &expected_output, num_lines, max_distance)
     });
-    let new_filepath = make_filepath(minimized_directory, module.module_name, ".erl");
+    let new_filepath = make_filepath(minimized_directory, &module.module_name, ".erl");
     match fs::write(&new_filepath, module.to_string()) {
         Ok(_) => (),
         Err(err) => {
