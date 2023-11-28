@@ -30,6 +30,7 @@ pub enum TypeApproximation {
     EtsTableName,
     EtsTableId,
     EtsTable,
+    SpecificAtom(String),
 }
 impl TypeApproximation {
     pub fn is_subtype_of(&self, other: &Self) -> bool {
@@ -46,6 +47,8 @@ impl TypeApproximation {
             (EtsTableId, EtsTable) => true,
             (EtsTableName, EtsTable) => true,
             (EtsTableName, Atom) => true,
+            (SpecificAtom(s), Boolean) if s == "true" || s == "false" => true,
+            (SpecificAtom(_), Atom) => true,
             (Tuple(ts1), Tuple(ts2)) if ts1.len() == ts2.len() => ts1
                 .iter()
                 .zip(ts2.iter())
@@ -124,6 +127,7 @@ impl fmt::Display for TypeApproximation {
             EtsTableName => write!(f, "atom()"),
             EtsTableId => write!(f, "ets:tid()"),
             EtsTable => write!(f, "ets:table()"),
+            SpecificAtom(a) => write!(f, "'{}'", a),
         }
     }
 }
@@ -142,6 +146,12 @@ pub fn type_union(left: &TypeApproximation, right: &TypeApproximation) -> TypeAp
                 .collect::<Vec<_>>(),
         ),
         (Tuple(_ts1), Tuple(_ts2)) => AnyTuple,
+        (SpecificAtom(_), SpecificAtom(_))
+            if left.is_subtype_of(&Boolean) && right.is_subtype_of(&Boolean) =>
+        {
+            Boolean
+        }
+        (SpecificAtom(_), SpecificAtom(_)) => Atom,
         _ => Any,
     }
 }
