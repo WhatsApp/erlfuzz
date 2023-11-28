@@ -390,21 +390,58 @@ static ETS_FUNCTIONS: OnceLock<
 
 #[rustfmt::skip]
 pub fn get_ets_functions() -> &'static [(&'static str, Determinism, TypeApproximation, Vec<TypeApproximation>)] {
+    let true_type = || SpecificAtom("true".to_string());
+    let info_item = || Union(vec![
+        SpecificAtom("binary".to_string()),
+        SpecificAtom("compressed".to_string()),
+        SpecificAtom("decentralized_counters".to_string()),
+        SpecificAtom("fixed".to_string()),
+        SpecificAtom("heir".to_string()),
+        SpecificAtom("id".to_string()),
+        SpecificAtom("keypos".to_string()),
+        SpecificAtom("memory".to_string()),
+        SpecificAtom("name".to_string()),
+        SpecificAtom("named_table".to_string()),
+        SpecificAtom("node".to_string()),
+        SpecificAtom("owner".to_string()),
+        SpecificAtom("protection".to_string()),
+        SpecificAtom("safe_fixed".to_string()),
+        SpecificAtom("safe_fixed_monotonic_time".to_string()),
+        SpecificAtom("size".to_string()),
+        SpecificAtom("stats".to_string()),
+        SpecificAtom("type".to_string()),
+        SpecificAtom("write_concurrency".to_string()),
+        SpecificAtom("read_concurrency".to_string()),
+    ]);
+    let new_opts = List(Box::new(Union(vec![
+        SpecificAtom("set".to_string()), SpecificAtom("ordered_set".to_string()), SpecificAtom("bag".to_string()), SpecificAtom("duplicate_bag".to_string()),
+        SpecificAtom("public".to_string()), SpecificAtom("protected".to_string()), SpecificAtom("private".to_string()),
+        SpecificAtom("named_table".to_string()),
+        Tuple(vec![SpecificAtom("keypos".to_string()), Integer]),
+        Tuple(vec![SpecificAtom("heir".to_string()), Pid, Any]),
+        Tuple(vec![SpecificAtom("heir".to_string()), SpecificAtom("none".to_string())]),
+        Tuple(vec![SpecificAtom("write_concurrency".to_string()), boolean_type()]),
+        Tuple(vec![SpecificAtom("write_concurrency".to_string()), SpecificAtom("auto".to_string())]),
+        Tuple(vec![SpecificAtom("read_concurrency".to_string()), boolean_type()]),
+        Tuple(vec![SpecificAtom("decentralized_counters".to_string()), boolean_type()]),
+        SpecificAtom("compressed".to_string()),
+    ])));
     ETS_FUNCTIONS.get_or_init(|| vec![
         ("all", AnyDeterminism, List(Box::new(ets_table_type())), vec![]),
-        ("delete", DeterministicOnly, boolean_type(), vec![ets_table_type()]),
-        ("delete", DeterministicOnly, boolean_type(), vec![ets_table_type(), Any]),
-        ("delete_all_objects", DeterministicOnly, boolean_type(), vec![ets_table_type()]),
-        ("delete_object", DeterministicOnly, boolean_type(), vec![ets_table_type(), AnyTuple]),
+        ("delete", DeterministicOnly, true_type(), vec![ets_table_type()]),
+        ("delete", DeterministicOnly, true_type(), vec![ets_table_type(), Any]),
+        ("delete_all_objects", DeterministicOnly, true_type(), vec![ets_table_type()]),
+        ("delete_object", DeterministicOnly, true_type(), vec![ets_table_type(), AnyTuple]),
         // file2tab
         ("first", AnyDeterminism, Any, vec![ets_table_type()]),
         // foldl, folr,
         // from_dets
         // fun2ms
-        ("give_away", DeterministicOnly, boolean_type(), vec![ets_table_type(), Pid, Any]),
+        ("give_away", DeterministicOnly, true_type(), vec![ets_table_type(), Pid, Any]),
         // i
-        ("info", AnyDeterminism, Any, vec![ets_table_type()]),
-        // info/2
+        // this could be made even more precise, but I don't think it's worth the effort
+        ("info", AnyDeterminism, Union(vec![SpecificAtom("undefined".to_string()), List(Box::new(Tuple(vec![info_item(), Any])))]), vec![ets_table_type()]),
+        ("info", AnyDeterminism, Any, vec![ets_table_type(), info_item()]),
         // init_table
         ("insert", DeterministicOnly, boolean_type(), vec![ets_table_type(), AnyTuple]),
         ("insert", DeterministicOnly, boolean_type(), vec![ets_table_type(), List(Box::new(AnyTuple))]),
@@ -417,7 +454,7 @@ pub fn get_ets_functions() -> &'static [(&'static str, Determinism, TypeApproxim
         ("lookup_element", AnyDeterminism, Any, vec![ets_table_type(), Any, Integer, Any]),
         // match/1, match/2, match/3, match_delete, match_object, match_spec_compile, match_spec_run
         ("lookup", DeterministicOnly, boolean_type(), vec![ets_table_type(), Any]),
-        ("new", DeterministicOnly, ets_table_type(), vec![Atom, List(Box::new(Bottom))]), // TODO: should not be Nil, but instead a list of options
+        ("new", DeterministicOnly, ets_table_type(), vec![Atom, new_opts]),
         ("next", AnyDeterminism, Any, vec![ets_table_type(), Any]),
         ("prev", AnyDeterminism, Any, vec![ets_table_type(), Any]),
         ("rename", DeterministicOnly, Atom, vec![ets_table_type(), Atom]),
