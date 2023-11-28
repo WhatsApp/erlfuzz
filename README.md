@@ -222,6 +222,8 @@ erlc:
 - https://github.com/erlang/otp/issues/7504
 - https://github.com/erlang/otp/pull/7527#issue-1833154980
 - https://github.com/erlang/otp/issues/7901
+- https://github.com/erlang/otp/pull/7902#issuecomment-1825299276
+- https://github.com/erlang/otp/pull/7902#issuecomment-1825301929
 
 dialyzer:
 - https://github.com/erlang/otp/issues/6419

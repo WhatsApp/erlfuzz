@@ -293,7 +293,7 @@ pub fn choose_type<RngType: rand::Rng>(rng: &mut RngType) -> TypeApproximation {
         AnyTuple,
         Atom,
         any_list.clone(),
-        Boolean,
+        boolean_type(),
         Map,
         Bitstring,
         Fun,
@@ -407,7 +407,6 @@ fn choose_weighted<T: Copy, F: Fn(T) -> u32, RngType: rand::Rng>(
 enum PatternKind {
     Nil,
     Atom,
-    Boolean,
     Integer,
     Float,
     Underscore,
@@ -424,7 +423,6 @@ enum PatternKind {
 const ALL_PATTERN_KINDS: &[PatternKind] = &[
     PatternKind::Nil,
     PatternKind::Atom,
-    PatternKind::Boolean,
     PatternKind::Integer,
     PatternKind::Float,
     PatternKind::Underscore,
@@ -440,8 +438,7 @@ const ALL_PATTERN_KINDS: &[PatternKind] = &[
 fn pattern_kind_weight(kind: PatternKind) -> u32 {
     match kind {
         PatternKind::Nil => 1,
-        PatternKind::Atom => 1,
-        PatternKind::Boolean => 1,
+        PatternKind::Atom => 2,
         PatternKind::Integer => 1,
         PatternKind::Float => 1,
         PatternKind::Underscore => 1,
@@ -528,15 +525,11 @@ fn gen_pattern<RngType: rand::Rng>(
     let mut size = 1;
     let pattern = match kind {
         PatternKind::Nil if List(Box::new(Bottom)).is_subtype_of(wanted_type) => Pattern::Nil(),
-        PatternKind::Boolean if Boolean.is_subtype_of(wanted_type) => {
-            Pattern::Atom(if rng.gen::<bool>() {
-                "true".to_string()
-            } else {
-                "false".to_string()
-            })
-        }
-        PatternKind::Atom if Atom.is_subtype_of(wanted_type) => {
-            Pattern::Atom(choose_random_atom(rng))
+        // This would be much cleaner with a let guard, but they are not stabilized yet (see https://github.com/rust-lang/rust/issues/51114)
+        // , and I don't want to require erlfuzz users to install Rust nightly.
+        PatternKind::Atom if pick_compatible_atom(wanted_type, rng).is_some() => {
+            let s = pick_compatible_atom(wanted_type, rng).unwrap();
+            Pattern::Atom(s)
         }
         PatternKind::Integer if Integer.is_subtype_of(wanted_type) => {
             Pattern::Integer(choose_random_integer(rng))
@@ -663,7 +656,6 @@ enum ExprKind {
     Integer,
     Float,
     String,
-    BooleanLiteral,
     AtomFunctionName,
     AtomOther,
     LocalCall,
@@ -709,7 +701,6 @@ const ALL_EXPR_KINDS: &[ExprKind] = &[
     ExprKind::Integer,
     ExprKind::Float,
     ExprKind::String,
-    ExprKind::BooleanLiteral,
     ExprKind::AtomFunctionName,
     ExprKind::AtomOther,
     ExprKind::Var,
@@ -749,9 +740,8 @@ fn expr_kind_weight(kind: ExprKind) -> u32 {
         ExprKind::Integer => 2,
         ExprKind::Float => 1,
         ExprKind::String => 2,
-        ExprKind::BooleanLiteral => 1,
         ExprKind::AtomFunctionName => 1,
-        ExprKind::AtomOther => 2,
+        ExprKind::AtomOther => 3,
         ExprKind::Var => 10,
         ExprKind::LocalCall => 3,
         ExprKind::RemoteCall => 2,
@@ -855,6 +845,7 @@ fn gen_expr<RngType: rand::Rng>(
     choice: ExprKind,
 ) -> Option<ExprId> {
     let mut size = 1;
+    let boolean = boolean_type();
     let expr_id = match choice {
         ExprKind::Nil if List(Box::new(Bottom)).is_subtype_of(wanted_type) => {
             m.add_expr(Expr::Nil(), List(Box::new(Bottom)))
@@ -881,12 +872,9 @@ fn gen_expr<RngType: rand::Rng>(
             let name = m.functions.iter().choose(rng).unwrap().name.clone();
             m.add_expr(Expr::Atom(name), Atom)
         }
-        ExprKind::AtomOther if Atom.is_subtype_of(wanted_type) => {
-            m.add_expr(Expr::Atom(choose_random_atom(rng)), Atom)
-        }
-        ExprKind::BooleanLiteral if Boolean.is_subtype_of(wanted_type) => {
-            let boolean = ["true", "false"].iter().choose(rng).unwrap();
-            m.add_expr(Expr::Atom(boolean.to_string()), Boolean)
+        ExprKind::AtomOther if pick_compatible_atom(wanted_type, rng).is_some() => {
+            let s = pick_compatible_atom(wanted_type, rng).unwrap();
+            m.add_expr(Expr::Atom(s), Atom)
         }
         ExprKind::LocalCall if ctx.may_recurse() => {
             let in_guard = match ctx.is_in_guard {
@@ -1090,7 +1078,7 @@ fn gen_expr<RngType: rand::Rng>(
                 m.add_expr(Expr::Catch(arg), m.expr_type(arg).clone())
             })
         }
-        ExprKind::Comparison if ctx.may_recurse() && Boolean.is_subtype_of(wanted_type) => {
+        ExprKind::Comparison if ctx.may_recurse() && boolean.is_subtype_of(wanted_type) => {
             let op = [Eq, NEq, LTE, LT, GTE, GT, ExactlyEq, ExactlyNEq]
                 .into_iter()
                 .choose(rng)
@@ -1099,7 +1087,7 @@ fn gen_expr<RngType: rand::Rng>(
                 let e1 = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                 env.shift_to_sibling(NotSafeToReuse);
                 let e2 = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
-                m.add_expr(Expr::BinaryOperation(op, e1, e2), Boolean)
+                m.add_expr(Expr::BinaryOperation(op, e1, e2), boolean_type())
             })
         }
         ExprKind::BinaryIntegerOp if ctx.may_recurse() && Integer.is_subtype_of(wanted_type) => {
@@ -1126,13 +1114,13 @@ fn gen_expr<RngType: rand::Rng>(
                 m.add_expr(Expr::BinaryOperation(op, e1, e2), Number)
             })
         }
-        ExprKind::BinaryBooleanOp if ctx.may_recurse() && Boolean.is_subtype_of(wanted_type) => {
+        ExprKind::BinaryBooleanOp if ctx.may_recurse() && boolean.is_subtype_of(wanted_type) => {
             let op = [And, Or, Xor].into_iter().choose(rng).unwrap();
             env.with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
-                let e1 = recurse_any_expr(&Boolean, rng, m, ctx, env, &mut size);
+                let e1 = recurse_any_expr(&boolean, rng, m, ctx, env, &mut size);
                 env.shift_to_sibling(NotSafeToReuse);
-                let e2 = recurse_any_expr(&Boolean, rng, m, ctx, env, &mut size);
-                m.add_expr(Expr::BinaryOperation(op, e1, e2), Boolean)
+                let e2 = recurse_any_expr(&boolean, rng, m, ctx, env, &mut size);
+                m.add_expr(Expr::BinaryOperation(op, e1, e2), boolean_type())
             })
         }
         ExprKind::BinaryListOp if ctx.may_recurse() && !ctx.is_in_guard => {
@@ -1146,7 +1134,7 @@ fn gen_expr<RngType: rand::Rng>(
             })
         }
         ExprKind::ShortCircuitOp if ctx.may_recurse() => {
-            let e1 = recurse_any_expr(&Boolean, rng, m, ctx, env, &mut size);
+            let e1 = recurse_any_expr(&boolean, rng, m, ctx, env, &mut size);
             // Important: after `false orelse (X = 42)`, X is not set !
             let e2 = env.with_single_scope(NoShadowing, Discard(NotSafeToReuse), |env| {
                 recurse_any_expr(wanted_type, rng, m, ctx, env, &mut size)
@@ -1161,9 +1149,9 @@ fn gen_expr<RngType: rand::Rng>(
             let e = recurse_any_expr(&Integer, rng, m, ctx, env, &mut size);
             m.add_expr(Expr::UnaryOperation(BitwiseNot, e), Integer)
         }
-        ExprKind::UnaryBooleanNot if ctx.may_recurse() && Boolean.is_subtype_of(wanted_type) => {
-            let e = recurse_any_expr(&Boolean, rng, m, ctx, env, &mut size);
-            m.add_expr(Expr::UnaryOperation(BooleanNot, e), Boolean)
+        ExprKind::UnaryBooleanNot if ctx.may_recurse() && boolean.is_subtype_of(wanted_type) => {
+            let e = recurse_any_expr(&boolean, rng, m, ctx, env, &mut size);
+            m.add_expr(Expr::UnaryOperation(BooleanNot, e), boolean)
         }
         ExprKind::UnaryNumberOp if ctx.may_recurse() && Number.is_subtype_of(wanted_type) => {
             let e = recurse_any_expr(&Number, rng, m, ctx, env, &mut size);
@@ -1434,6 +1422,26 @@ fn choose_random_atom<RngType: rand::Rng>(rng: &mut RngType) -> String {
     .to_string()
 }
 
+pub fn pick_compatible_atom<RngType: rand::Rng>(
+    t: &TypeApproximation,
+    rng: &mut RngType,
+) -> Option<String> {
+    match t {
+        SpecificAtom(s) => Some(s.to_string()),
+        Atom => Some(choose_random_atom(rng)),
+        Union(ts) => {
+            // This slightly weird dance is to appease the borrow checker;
+            // doing things naively results in `rng` being borrowed mutably twice in the same expression.
+            let mut ts2 = ts
+                .iter()
+                .filter_map(|t| pick_compatible_atom(t, rng))
+                .collect::<Vec<String>>();
+            ts2.drain(..).choose(rng)
+        }
+        _ => None,
+    }
+}
+
 fn gen_cases<RngType: rand::Rng>(
     pattern_type: &TypeApproximation,
     body_type: &TypeApproximation,
@@ -1509,7 +1517,7 @@ fn gen_guard<RngType: rand::Rng>(
         let mut guard_exprs = Vec::new();
         // And a guard sequence is made of 1 or more expressions.
         loop {
-            let e = recurse_any_expr(&Boolean, rng, module, ctx, env, &mut size);
+            let e = recurse_any_expr(&boolean_type(), rng, module, ctx, env, &mut size);
             guard_exprs.push(e);
             if size >= ctx.allowed_size || rng.gen::<bool>() {
                 break;
@@ -1670,7 +1678,7 @@ fn gen_comprehension_element<RngType: rand::Rng>(
     let comprehension_element_kind = kinds.into_iter().choose(rng).unwrap();
     match comprehension_element_kind {
         ComprehensionElementKind::Filter => {
-            let e = recurse_any_expr(&Boolean, rng, m, ctx, env, size_to_incr);
+            let e = recurse_any_expr(&boolean_type(), rng, m, ctx, env, size_to_incr);
             ComprehensionElement::Filter(e)
         }
         ComprehensionElementKind::ListGenerator => {

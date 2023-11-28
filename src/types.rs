@@ -19,7 +19,6 @@ pub enum TypeApproximation {
     Tuple(Vec<TypeApproximation>),
     Atom,
     List(Box<TypeApproximation>),
-    Boolean,
     Map,
     Bitstring,
     Fun,
@@ -44,10 +43,8 @@ impl TypeApproximation {
             (_, Any) => true,
             (Integer, Number) => true,
             (Float, Number) => true,
-            (Boolean, Atom) => true,
             (Tuple(_), AnyTuple) => true,
             (EtsTableName, Atom) => true,
-            (SpecificAtom(s), Boolean) if s == "true" || s == "false" => true,
             (SpecificAtom(_), Atom) => true,
             (Tuple(ts1), Tuple(ts2)) if ts1.len() == ts2.len() => ts1
                 .iter()
@@ -105,6 +102,12 @@ impl TypeApproximation {
 pub fn ets_table_type() -> TypeApproximation {
     Union(vec![EtsTableId, EtsTableName])
 }
+pub fn boolean_type() -> TypeApproximation {
+    Union(vec![
+        SpecificAtom("true".into()),
+        SpecificAtom("false".into()),
+    ])
+}
 
 pub fn write_list_strings<I: Iterator<Item = String>>(
     f: &mut fmt::Formatter<'_>,
@@ -138,7 +141,6 @@ impl fmt::Display for TypeApproximation {
             Number => write!(f, "number()"),
             AnyTuple => write!(f, "tuple()"),
             Atom => write!(f, "atom()"),
-            Boolean => write!(f, "boolean()"),
             Map => write!(f, "map()"),
             Bitstring => write!(f, "bitstring()"),
             Fun => write!(f, "fun()"),
@@ -149,9 +151,8 @@ impl fmt::Display for TypeApproximation {
             SpecificAtom(a) => write!(f, "'{}'", a),
             EtsTableName => write!(f, "atom()"),
             EtsTableId => write!(f, "ets:tid()"),
-            Union(ts) if ts.len() == 2 && ts[0] == EtsTableId && ts[1] == EtsTableName => {
-                write!(f, "ets:table()")
-            }
+            t if *t == boolean_type() => write!(f, "boolean()"),
+            t if *t == ets_table_type() => write!(f, "ets:table()"),
             Union(ts) => {
                 write!(f, "(")?;
                 write_list_strings(f, ts.iter().map(|t| t.to_string()), " | ")?;
@@ -178,9 +179,9 @@ pub fn type_union(left: &TypeApproximation, right: &TypeApproximation) -> TypeAp
         ),
         (Tuple(_ts1), Tuple(_ts2)) => AnyTuple,
         (SpecificAtom(_), SpecificAtom(_))
-            if left.is_subtype_of(&Boolean) && right.is_subtype_of(&Boolean) =>
+            if left.is_subtype_of(&boolean_type()) && right.is_subtype_of(&boolean_type()) =>
         {
-            Boolean
+            boolean_type()
         }
         (SpecificAtom(_), SpecificAtom(_)) => Atom,
         // We could be more precise for Union, but it would risk blowing up the size of the types.
