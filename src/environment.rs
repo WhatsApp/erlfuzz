@@ -264,6 +264,21 @@ impl Environment {
                     },
                 })
             });
+        get_ets_functions()
+            .iter()
+            .for_each(|(name, determinism, return_type, arg_types)| {
+                funs.push(FunctionInformation {
+                    module_name: "ets".to_string(),
+                    name: name.to_string(),
+                    determinism: *determinism,
+                    guard_context: NotInGuard,
+                    call_locality: Remote,
+                    t: FunctionTypeApproximation {
+                        return_type: return_type.clone(),
+                        arg_types: arg_types.to_vec(),
+                    },
+                })
+            });
         Environment {
             scopes: vec![Scope::Single {
                 element: ScopeElement {

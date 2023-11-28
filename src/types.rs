@@ -27,6 +27,9 @@ pub enum TypeApproximation {
     Port,
     Ref,
     Bottom,
+    EtsTableName,
+    EtsTableId,
+    EtsTable,
 }
 impl TypeApproximation {
     pub fn is_subtype_of(&self, other: &Self) -> bool {
@@ -40,6 +43,9 @@ impl TypeApproximation {
             (Float, Number) => true,
             (Boolean, Atom) => true,
             (Tuple(_), AnyTuple) => true,
+            (EtsTableId, EtsTable) => true,
+            (EtsTableName, EtsTable) => true,
+            (EtsTableName, Atom) => true,
             (Tuple(ts1), Tuple(ts2)) if ts1.len() == ts2.len() => ts1
                 .iter()
                 .zip(ts2.iter())
@@ -64,6 +70,9 @@ impl TypeApproximation {
                 ts1.iter_mut()
                     .zip(ts2.iter())
                     .for_each(|(t1, t2)| t1.refine(t2));
+            }
+            (ref mut t @ EtsTable, Atom) | (ref mut t @ Atom, EtsTable) => {
+                **t = EtsTableName;
             }
             (ref mut t, _) => {
                 **t = Bottom;
@@ -112,6 +121,9 @@ impl fmt::Display for TypeApproximation {
             Port => write!(f, "port()"),
             Ref => write!(f, "reference()"),
             Bottom => write!(f, "none()"),
+            EtsTableName => write!(f, "atom()"),
+            EtsTableId => write!(f, "ets:tid()"),
+            EtsTable => write!(f, "ets:table()"),
         }
     }
 }
@@ -121,6 +133,7 @@ pub fn type_union(left: &TypeApproximation, right: &TypeApproximation) -> TypeAp
         _ if left.is_subtype_of(right) => right.clone(),
         _ if right.is_subtype_of(left) => left.clone(),
         (Float, Integer) | (Integer, Float) => Number,
+        (EtsTableId, EtsTableName) | (EtsTableName, EtsTableId) => EtsTable,
         (List(t1), List(t2)) => List(Box::new(type_union(t1, t2))),
         (Tuple(ts1), Tuple(ts2)) if ts1.len() == ts2.len() => Tuple(
             ts1.iter()
