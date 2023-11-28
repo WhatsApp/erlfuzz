@@ -301,6 +301,7 @@ pub fn choose_type<RngType: rand::Rng>(rng: &mut RngType) -> TypeApproximation {
         Port,
         Ref,
         Bottom,
+        ets_table_type(),
     ]
     .into_iter()
     .choose(rng)

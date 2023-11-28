@@ -29,7 +29,6 @@ pub enum TypeApproximation {
     Bottom,
     EtsTableName,
     EtsTableId,
-    EtsTable,
     SpecificAtom(String),
     Union(Vec<TypeApproximation>),
 }
@@ -47,8 +46,6 @@ impl TypeApproximation {
             (Float, Number) => true,
             (Boolean, Atom) => true,
             (Tuple(_), AnyTuple) => true,
-            (EtsTableId, EtsTable) => true,
-            (EtsTableName, EtsTable) => true,
             (EtsTableName, Atom) => true,
             (SpecificAtom(s), Boolean) if s == "true" || s == "false" => true,
             (SpecificAtom(_), Atom) => true,
@@ -69,12 +66,26 @@ impl TypeApproximation {
             return;
         }
         match (self, other) {
-            (Union(ts1), _) => {
-                ts1.iter_mut().for_each(|t| t.refine(other));
-                ts1.retain(|t| match t {
-                    Bottom => false,
-                    _ => true,
-                });
+            (u @ Union(_), _) => {
+                // This weird structure is to appease the borrow checker
+                let maybe_new_t = {
+                    let Union(ts) = u else { unreachable!() };
+                    ts.iter_mut().for_each(|t| t.refine(other));
+                    ts.retain(|t| match t {
+                        Bottom => false,
+                        _ => true,
+                    });
+                    if ts.len() == 0 {
+                        Some(Bottom)
+                    } else if ts.len() == 1 {
+                        Some(ts.pop().unwrap())
+                    } else {
+                        None
+                    }
+                };
+                if let Some(new_t) = maybe_new_t {
+                    *u = new_t;
+                }
             }
             (List(ref mut t1), List(t2)) => {
                 t1.refine(t2);
@@ -84,14 +95,15 @@ impl TypeApproximation {
                     .zip(ts2.iter())
                     .for_each(|(t1, t2)| t1.refine(t2));
             }
-            (ref mut t @ EtsTable, Atom) | (ref mut t @ Atom, EtsTable) => {
-                **t = EtsTableName;
-            }
-            (ref mut t, _) => {
-                **t = Bottom;
+            (t, _) => {
+                *t = Bottom;
             }
         }
     }
+}
+
+pub fn ets_table_type() -> TypeApproximation {
+    Union(vec![EtsTableId, EtsTableName])
 }
 
 pub fn write_list_strings<I: Iterator<Item = String>>(
@@ -134,10 +146,12 @@ impl fmt::Display for TypeApproximation {
             Port => write!(f, "port()"),
             Ref => write!(f, "reference()"),
             Bottom => write!(f, "none()"),
+            SpecificAtom(a) => write!(f, "'{}'", a),
             EtsTableName => write!(f, "atom()"),
             EtsTableId => write!(f, "ets:tid()"),
-            EtsTable => write!(f, "ets:table()"),
-            SpecificAtom(a) => write!(f, "'{}'", a),
+            Union(ts) if ts.len() == 2 && ts[0] == EtsTableId && ts[1] == EtsTableName => {
+                write!(f, "ets:table()")
+            }
             Union(ts) => {
                 write!(f, "(")?;
                 write_list_strings(f, ts.iter().map(|t| t.to_string()), " | ")?;
@@ -152,7 +166,9 @@ pub fn type_union(left: &TypeApproximation, right: &TypeApproximation) -> TypeAp
         _ if left.is_subtype_of(right) => right.clone(),
         _ if right.is_subtype_of(left) => left.clone(),
         (Float, Integer) | (Integer, Float) => Number,
-        (EtsTableId, EtsTableName) | (EtsTableName, EtsTableId) => EtsTable,
+        (EtsTableId, EtsTableName) | (EtsTableName, EtsTableId) => {
+            Union(vec![EtsTableId, EtsTableName])
+        }
         (List(t1), List(t2)) => List(Box::new(type_union(t1, t2))),
         (Tuple(ts1), Tuple(ts2)) if ts1.len() == ts2.len() => Tuple(
             ts1.iter()

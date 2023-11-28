@@ -291,48 +291,48 @@ static ETS_FUNCTIONS: OnceLock<
 #[rustfmt::skip]
 pub fn get_ets_functions() -> &'static [(&'static str, Determinism, TypeApproximation, Vec<TypeApproximation>)] {
     ETS_FUNCTIONS.get_or_init(|| vec![
-        ("all", AnyDeterminism, List(Box::new(EtsTable)), vec![]),
-        ("delete", DeterministicOnly, Boolean, vec![EtsTable]),
-        ("delete", DeterministicOnly, Boolean, vec![EtsTable, Any]),
-        ("delete_all_objects", DeterministicOnly, Boolean, vec![EtsTable]),
-        ("delete_object", DeterministicOnly, Boolean, vec![EtsTable, AnyTuple]),
+        ("all", AnyDeterminism, List(Box::new(ets_table_type())), vec![]),
+        ("delete", DeterministicOnly, Boolean, vec![ets_table_type()]),
+        ("delete", DeterministicOnly, Boolean, vec![ets_table_type(), Any]),
+        ("delete_all_objects", DeterministicOnly, Boolean, vec![ets_table_type()]),
+        ("delete_object", DeterministicOnly, Boolean, vec![ets_table_type(), AnyTuple]),
         // file2tab
-        ("first", AnyDeterminism, Any, vec![EtsTable]),
+        ("first", AnyDeterminism, Any, vec![ets_table_type()]),
         // foldl, folr,
         // from_dets
         // fun2ms
-        ("give_away", DeterministicOnly, Boolean, vec![EtsTable, Pid, Any]),
+        ("give_away", DeterministicOnly, Boolean, vec![ets_table_type(), Pid, Any]),
         // i
-        ("info", AnyDeterminism, Any, vec![EtsTable]),
+        ("info", AnyDeterminism, Any, vec![ets_table_type()]),
         // info/2
         // init_table
-        ("insert", DeterministicOnly, Boolean, vec![EtsTable, AnyTuple]),
-        ("insert", DeterministicOnly, Boolean, vec![EtsTable, List(Box::new(AnyTuple))]),
-        ("insert_new", DeterministicOnly, Boolean, vec![EtsTable, AnyTuple]),
-        ("insert_new", DeterministicOnly, Boolean, vec![EtsTable, List(Box::new(AnyTuple))]),
+        ("insert", DeterministicOnly, Boolean, vec![ets_table_type(), AnyTuple]),
+        ("insert", DeterministicOnly, Boolean, vec![ets_table_type(), List(Box::new(AnyTuple))]),
+        ("insert_new", DeterministicOnly, Boolean, vec![ets_table_type(), AnyTuple]),
+        ("insert_new", DeterministicOnly, Boolean, vec![ets_table_type(), List(Box::new(AnyTuple))]),
         ("is_compiled_ms", DeterministicOnly, Boolean, vec![Any]),
-        ("last", AnyDeterminism, Any, vec![EtsTable]),
-        ("lookup", AnyDeterminism, AnyTuple, vec![EtsTable, Any]),
-        ("lookup_element", AnyDeterminism, Any, vec![EtsTable, Any, Integer]),
-        ("lookup_element", AnyDeterminism, Any, vec![EtsTable, Any, Integer, Any]),
+        ("last", AnyDeterminism, Any, vec![ets_table_type()]),
+        ("lookup", AnyDeterminism, AnyTuple, vec![ets_table_type(), Any]),
+        ("lookup_element", AnyDeterminism, Any, vec![ets_table_type(), Any, Integer]),
+        ("lookup_element", AnyDeterminism, Any, vec![ets_table_type(), Any, Integer, Any]),
         // match/1, match/2, match/3, match_delete, match_object, match_spec_compile, match_spec_run
-        ("lookup", DeterministicOnly, Boolean, vec![EtsTable, Any]),
-        ("new", DeterministicOnly, EtsTable, vec![Atom, List(Box::new(Bottom))]), // TODO: should not be Nil, but instead a list of options
-        ("next", AnyDeterminism, Any, vec![EtsTable, Any]),
-        ("prev", AnyDeterminism, Any, vec![EtsTable, Any]),
-        ("rename", DeterministicOnly, Atom, vec![EtsTable, Atom]),
+        ("lookup", DeterministicOnly, Boolean, vec![ets_table_type(), Any]),
+        ("new", DeterministicOnly, ets_table_type(), vec![Atom, List(Box::new(Bottom))]), // TODO: should not be Nil, but instead a list of options
+        ("next", AnyDeterminism, Any, vec![ets_table_type(), Any]),
+        ("prev", AnyDeterminism, Any, vec![ets_table_type(), Any]),
+        ("rename", DeterministicOnly, Atom, vec![ets_table_type(), Atom]),
         // repair_continuation
-        ("safe_fixtable", DeterministicOnly, Boolean, vec![EtsTable, Boolean]),
+        ("safe_fixtable", DeterministicOnly, Boolean, vec![ets_table_type(), Boolean]),
         // select, select_count, select_delete, select_replace, select_reverse
         // setopts
-        ("slot", AnyDeterminism, List(Box::new(Any)), vec![EtsTable, Integer]),
+        ("slot", AnyDeterminism, List(Box::new(Any)), vec![ets_table_type(), Integer]),
         // tab2file
-        ("tab2list", AnyDeterminism, List(Box::new(AnyTuple)), vec![EtsTable]),
+        ("tab2list", AnyDeterminism, List(Box::new(AnyTuple)), vec![ets_table_type()]),
         // tabfile_info, table/1, table/2
-        ("take", AnyDeterminism, List(Box::new(AnyTuple)), vec![EtsTable, Any]),
+        ("take", AnyDeterminism, List(Box::new(AnyTuple)), vec![ets_table_type(), Any]),
         // test_ms, to_dets, update_counter
-        ("update_element", DeterministicOnly, Boolean, vec![EtsTable, Any, Tuple(vec![Integer, Any])]),
-        ("update_element", DeterministicOnly, Boolean, vec![EtsTable, Any, List(Box::new(Tuple(vec![Integer, Any])))]),
-        ("whereis", AnyDeterminism, Pid, vec![EtsTable]),
+        ("update_element", DeterministicOnly, Boolean, vec![ets_table_type(), Any, Tuple(vec![Integer, Any])]),
+        ("update_element", DeterministicOnly, Boolean, vec![ets_table_type(), Any, List(Box::new(Tuple(vec![Integer, Any])))]),
+        ("whereis", AnyDeterminism, Pid, vec![ets_table_type()]),
     ])
 }
