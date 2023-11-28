@@ -302,11 +302,15 @@ pub fn choose_type<RngType: rand::Rng>(rng: &mut RngType) -> TypeApproximation {
         Ref,
         Bottom,
         ets_table_type(),
+        Union(vec![]),
     ]
     .into_iter()
     .choose(rng)
     .unwrap();
-    if result == any_list && rng.gen::<bool>() {
+    if let Union(_) = result {
+        let arity = choose_arity(rng);
+        Union(make_vec(arity, || choose_type(rng)))
+    } else if result == any_list && rng.gen::<bool>() {
         List(Box::new(choose_type(rng)))
     } else if result == AnyTuple && rng.gen::<bool>() {
         let arity = choose_arity(rng);
