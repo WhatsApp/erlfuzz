@@ -773,6 +773,7 @@ enum ExprKind {
     MapUpdate,
     RecordCreation,
     RecordUpdate,
+    RecordIndex,
     BitstringConstruction,
     ListComprehension,
     BitstringComprehension,
@@ -821,6 +822,7 @@ const ALL_EXPR_KINDS: &[ExprKind] = &[
     ExprKind::MapUpdate,
     ExprKind::RecordCreation,
     ExprKind::RecordUpdate,
+    ExprKind::RecordIndex,
     ExprKind::BitstringConstruction,
     ExprKind::ListComprehension,
     ExprKind::BitstringComprehension,
@@ -862,6 +864,7 @@ fn expr_kind_weight(kind: ExprKind) -> u32 {
         ExprKind::MapUpdate => 1,
         ExprKind::RecordCreation => 1,
         ExprKind::RecordUpdate => 1,
+        ExprKind::RecordIndex => 1,
         ExprKind::BitstringConstruction => 1,
         ExprKind::ListComprehension => 1,
         ExprKind::BitstringComprehension => 1,
@@ -1366,6 +1369,11 @@ fn gen_expr<RngType: rand::Rng>(
                 Expr::RecordUpdate(old_record_expr_id, record_id, field_exprs),
                 new_wanted_type,
             )
+        }
+        ExprKind::RecordIndex if Integer.is_subtype_of(wanted_type) => {
+            let (record_id, record) = m.all_records_by_id().choose(rng)?;
+            let record_field_id = record.fields.iter().choose(rng)?;
+            m.add_expr(Expr::RecordIndex(record_id, *record_field_id), Integer)
         }
         // may_recurse is not needed as the bitstring may be empty.
         ExprKind::BitstringConstruction if Bitstring.is_subtype_of(wanted_type) => {

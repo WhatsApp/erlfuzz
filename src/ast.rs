@@ -209,6 +209,7 @@ pub enum Expr {
     MapUpdate(ExprId, ExprId, ExprId),
     RecordCreation(RecordId, Vec<(RecordFieldId, ExprId)>),
     RecordUpdate(ExprId, RecordId, Vec<(RecordFieldId, ExprId)>),
+    RecordIndex(RecordId, RecordFieldId),
     BitstringConstruction(Vec<(ExprId, Option<ExprId>, TypeSpecifier)>),
     Fun(Option<VarNum>, Vec<FunctionClauseId>),
     Comprehension(ComprehensionKind, ExprId, Vec<ComprehensionElement>),
@@ -263,7 +264,8 @@ impl SizedAst for Expr {
             | Expr::Atom(_)
             | Expr::Integer(_)
             | Expr::Float(_)
-            | Expr::String(_) => 1,
+            | Expr::String(_)
+            | Expr::RecordIndex(_, _) => 1,
         }
     }
 }
@@ -385,6 +387,12 @@ impl AstNode for Expr {
                 )?;
                 write!(f, "}})")
             }
+            Expr::RecordIndex(record_id, field_id) => write!(
+                f,
+                "(#{}.{})",
+                m.record(*record_id).name,
+                m.record_field(*field_id).name
+            ),
             Expr::BitstringConstruction(elements) => {
                 write!(f, "(<<")?;
                 write_list_strings(

@@ -1026,7 +1026,12 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                     });
             }
         }
-        Expr::Var(_) | Expr::Nil() | Expr::Atom(_) | Expr::Integer(_) | Expr::Float(_) => (),
+        Expr::Var(_)
+        | Expr::Nil()
+        | Expr::Atom(_)
+        | Expr::Integer(_)
+        | Expr::Float(_)
+        | Expr::RecordIndex(_, _) => (),
     }
 }
 
