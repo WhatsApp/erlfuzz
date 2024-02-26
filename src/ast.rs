@@ -207,6 +207,7 @@ pub enum Expr {
     MapLiteral(Vec<(ExprId, ExprId)>),
     MapInsertion(ExprId, ExprId, ExprId),
     MapUpdate(ExprId, ExprId, ExprId),
+    RecordCreation(RecordId, Vec<(RecordFieldId, ExprId)>),
     BitstringConstruction(Vec<(ExprId, Option<ExprId>, TypeSpecifier)>),
     Fun(Option<VarNum>, Vec<FunctionClauseId>),
     Comprehension(ComprehensionKind, ExprId, Vec<ComprehensionElement>),
@@ -243,6 +244,11 @@ impl SizedAst for Expr {
             }
             Expr::MapComprehension(head_key, head_value, elements) => {
                 1 + head_key.size(module) + head_value.size(module) + elements.size(module)
+            }
+            Expr::RecordCreation(_, fields) => {
+                fields.iter().fold(1, |acc, (_name, initializer)| {
+                    acc + initializer.size(module)
+                })
             }
             Expr::Fun(_, clauses) => 1 + clauses.size(module),
             Expr::Try(exprs, of, catch, after) => {
@@ -344,6 +350,22 @@ impl AstNode for Expr {
                 with_module(*k, m),
                 with_module(*v, m)
             ),
+            Expr::RecordCreation(record_id, fields) => {
+                let name = &m.record(*record_id).name;
+                write!(f, "(#{}{{", name)?;
+                write_list_strings(
+                    f,
+                    fields.iter().map(|(field, value)| {
+                        format!(
+                            "{} = {}",
+                            m.record_field(*field).name,
+                            with_module(*value, m)
+                        )
+                    }),
+                    ", ",
+                )?;
+                write!(f, "}})")
+            }
             Expr::BitstringConstruction(elements) => {
                 write!(f, "(<<")?;
                 write_list_strings(
@@ -888,6 +910,7 @@ impl AstNode for Record {
 pub struct RecordField {
     pub name: String,
     pub initializer: Option<ExprId>,
+    pub initializer_safe_in_guard: bool,
     pub type_: TypeApproximation,
 }
 impl SizedAst for RecordField {
@@ -919,7 +942,7 @@ pub struct Module {
     bodies: Vec<Body>,
     guard_seqs: Vec<GuardSeq>,
     guards: Vec<Guard>,
-    records: Vec<Record>,
+    pub records: Vec<Record>,
     record_fields: Vec<RecordField>,
 }
 impl fmt::Display for Module {
@@ -1103,6 +1126,12 @@ impl Module {
         self.record_fields.push(rf);
         RecordFieldId((self.record_fields.len() - 1).try_into().unwrap())
     }
+    pub fn all_records_by_id(&self) -> impl Iterator<Item = (RecordId, &Record)> + '_ {
+        self.records
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (RecordId(i as u32), r))
+    }
 }
 
 pub trait NodeId {
@@ -1174,7 +1203,7 @@ impl NodeId for GuardSeqId {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordId(u32);
 impl NodeId for RecordId {
     type Node = Record;

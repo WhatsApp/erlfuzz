@@ -716,6 +716,29 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
             reduce_expr(module, run, k_id);
             reduce_expr(module, run, v_id);
         }
+        Expr::RecordCreation(r_id, ref mut fields) => {
+            for i in (0..fields.len()).rev() {
+                let (f, v) = fields.remove(i);
+                if try_replace_expr!("eliminating a field of a record creation", || {
+                    Expr::RecordCreation(r_id, fields.clone())
+                }) {
+                    continue;
+                }
+                fields.insert(i, (f, v));
+            }
+            if try_replace_expr!("replacing a record creation by a tuple", || {
+                let mut args = Vec::new();
+                for (_, e2) in fields.iter() {
+                    args.push(*e2);
+                }
+                Expr::Tuple(args)
+            }) {
+                return recurse_expr(module, run, expr_id);
+            }
+            for (_, e2) in fields {
+                reduce_expr(module, run, *e2);
+            }
+        }
         Expr::BitstringConstruction(ref mut elements) => {
             // TODO: add another reduction, that removes size/type-specifier.
             for i in (0..elements.len()).rev() {

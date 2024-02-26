@@ -9,6 +9,8 @@ use std::iter::zip;
 
 use TypeApproximation::*;
 
+use crate::ast::RecordId;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeApproximation {
     Any,
@@ -17,6 +19,9 @@ pub enum TypeApproximation {
     Number,
     AnyTuple,
     Tuple(Vec<TypeApproximation>),
+    // Note that all the information is duplicated between the record in the module and here.
+    // This is because we don't have access to the module when manipulating the type.
+    RecordType(RecordId, String, Vec<(String, TypeApproximation)>),
     Atom,
     List(Box<TypeApproximation>),
     Map,
@@ -44,6 +49,10 @@ impl TypeApproximation {
             (Integer, Number) => true,
             (Float, Number) => true,
             (Tuple(_), AnyTuple) => true,
+            (RecordType(_, _, _), AnyTuple) => true,
+            (RecordType(_, name, fields), Tuple(v2)) if 1 + fields.len() == v2.len() => {
+                record_type_to_tuple(name, fields).is_subtype_of(other)
+            }
             (EtsTableName, Atom) => true,
             (SpecificAtom(_), Atom) => true,
             (Tuple(ts1), Tuple(ts2)) if ts1.len() == ts2.len() => ts1
@@ -99,6 +108,16 @@ impl TypeApproximation {
     }
 }
 
+fn record_type_to_tuple(
+    name: &String,
+    fields: &Vec<(String, TypeApproximation)>,
+) -> TypeApproximation {
+    let mut v = vec![];
+    v.push(SpecificAtom(name.clone()));
+    v.extend(fields.iter().map(|(_, t)| t.clone()));
+    Tuple(v)
+}
+
 pub fn ets_table_type() -> TypeApproximation {
     Union(vec![EtsTableId, EtsTableName])
 }
@@ -149,6 +168,7 @@ impl fmt::Display for TypeApproximation {
             Ref => write!(f, "reference()"),
             Bottom => write!(f, "none()"),
             SpecificAtom(a) => write!(f, "'{}'", a),
+            RecordType(_, name, _) => write!(f, "#{}{{}}", name),
             EtsTableName => write!(f, "atom()"),
             EtsTableId => write!(f, "ets:tid()"),
             t if *t == boolean_type() => write!(f, "boolean()"),
@@ -184,6 +204,9 @@ pub fn type_union(left: &TypeApproximation, right: &TypeApproximation) -> TypeAp
             boolean_type()
         }
         (SpecificAtom(_), SpecificAtom(_)) => Atom,
+        (RecordType(_, n, f), t2) | (t2, RecordType(_, n, f)) => {
+            type_union(&record_type_to_tuple(n, f), t2)
+        }
         // We could be more precise for Union, but it would risk blowing up the size of the types.
         _ => Any,
     }

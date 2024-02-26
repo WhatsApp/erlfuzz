@@ -10,6 +10,7 @@ use std::fmt;
 use num_bigint::BigInt;
 use rand::distributions::DistString;
 use rand::prelude::IteratorRandom;
+use rand::prelude::SliceRandom;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_distr::Binomial;
@@ -340,10 +341,17 @@ fn gen_record<RngType: rand::Rng>(
     for i in 0..record_arity {
         let field_name = format!("rf{}", i);
         let field_type = choose_type(rng);
+        let mut in_guard = false;
         let initializer = if rng.gen::<bool>() {
+            in_guard = rng.gen::<bool>();
+            let actual_ctx = if in_guard {
+                new_ctx.in_guard()
+            } else {
+                new_ctx
+            };
             Some(
                 env.with_single_scope(NoShadowing, Discard(SafeToReuse), |env| {
-                    recurse_any_expr(&field_type, rng, module, new_ctx, env, &mut size_to_incr)
+                    recurse_any_expr(&field_type, rng, module, actual_ctx, env, &mut size_to_incr)
                 }),
             )
         } else {
@@ -353,6 +361,7 @@ fn gen_record<RngType: rand::Rng>(
             name: field_name,
             type_: field_type,
             initializer,
+            initializer_safe_in_guard: in_guard,
         }));
     }
     module.add_record(Record {
@@ -723,6 +732,7 @@ enum ExprKind {
     MapLiteral,
     MapInsertion,
     MapUpdate,
+    RecordCreation,
     BitstringConstruction,
     ListComprehension,
     BitstringComprehension,
@@ -769,6 +779,7 @@ const ALL_EXPR_KINDS: &[ExprKind] = &[
     ExprKind::MapLiteral,
     ExprKind::MapInsertion,
     ExprKind::MapUpdate,
+    ExprKind::RecordCreation,
     ExprKind::BitstringConstruction,
     ExprKind::ListComprehension,
     ExprKind::BitstringComprehension,
@@ -808,6 +819,7 @@ fn expr_kind_weight(kind: ExprKind) -> u32 {
         ExprKind::MapLiteral => 1,
         ExprKind::MapInsertion => 1,
         ExprKind::MapUpdate => 1,
+        ExprKind::RecordCreation => 1,
         ExprKind::BitstringConstruction => 1,
         ExprKind::ListComprehension => 1,
         ExprKind::BitstringComprehension => 1,
@@ -1252,6 +1264,36 @@ fn gen_expr<RngType: rand::Rng>(
                 let v = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                 m.add_expr(Expr::MapUpdate(map, k, v), Map)
             }),
+        ExprKind::RecordCreation if ctx.may_recurse() => {
+            let record_id = get_compatible_records(m, wanted_type)
+                .iter()
+                .choose(rng)
+                .copied()?;
+            let mut field_named_exprs = Vec::new();
+            let record = m.record(record_id);
+            let mut fields = record.fields.clone();
+            fields.shuffle(rng);
+            env.with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
+                for field_id in &fields {
+                    let field = m.record_field(*field_id);
+                    if rng.gen::<bool>()
+                        && field.initializer.is_some()
+                        && (field.initializer_safe_in_guard || !ctx.is_in_guard)
+                    {
+                        continue;
+                    }
+                    field_named_exprs.push((
+                        *field_id,
+                        recurse_any_expr(&field.type_.clone(), rng, m, ctx, env, &mut size),
+                    ));
+                    env.shift_to_sibling(NotSafeToReuse);
+                }
+            });
+            m.add_expr(
+                Expr::RecordCreation(record_id, field_named_exprs),
+                record_id_to_type(m, record_id),
+            )
+        }
         // may_recurse is not needed as the bitstring may be empty.
         ExprKind::BitstringConstruction if Bitstring.is_subtype_of(wanted_type) => {
             // FIXME: abstract away this pattern
@@ -1404,6 +1446,50 @@ fn gen_expr<RngType: rand::Rng>(
     };
     *size_to_incr += expr_id.size(m);
     Some(expr_id)
+}
+
+fn record_id_to_type(m: &Module, record_id: RecordId) -> TypeApproximation {
+    let record = m.record(record_id);
+    let fields = record
+        .fields
+        .iter()
+        .map(|f| {
+            let record_field = m.record_field(*f);
+            (record_field.name.clone(), record_field.type_.clone())
+        })
+        .collect();
+    RecordType(record_id, record.name.clone(), fields)
+}
+
+fn get_compatible_records(m: &Module, wanted_type: &TypeApproximation) -> Vec<RecordId> {
+    match wanted_type {
+        RecordType(id, _, _) => vec![*id],
+        Union(ts) => ts
+            .iter()
+            .flat_map(|t| get_compatible_records(m, t))
+            .collect(),
+        Any | AnyTuple => m.all_records_by_id().map(|(id, _)| id).collect(),
+        Tuple(elements) => m
+            .all_records_by_id()
+            .filter_map(|(id, r)| {
+                if r.fields.len() == elements.len()
+                    && r.fields
+                        .iter()
+                        .zip(elements.iter())
+                        .all(|(record_field_id, t_tuple)| {
+                            m.record_field(*record_field_id)
+                                .type_
+                                .is_subtype_of(t_tuple)
+                        })
+                {
+                    Some(id)
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        _ => vec![],
+    }
 }
 
 fn choose_random_integer<RngType: rand::Rng>(rng: &mut RngType) -> BigInt {
