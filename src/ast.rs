@@ -858,6 +858,54 @@ impl AstNode for FunctionDeclaration {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct Record {
+    pub fields: Vec<RecordFieldId>,
+    pub name: String,
+    pub hidden: bool,
+}
+impl SizedAst for Record {
+    fn size(&self, module: &Module) -> ASTSize {
+        if self.hidden {
+            0
+        } else {
+            1 + self.fields.size(module)
+        }
+    }
+}
+impl AstNode for Record {
+    fn fmt(&self, m: &Module, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.hidden {
+            return Ok(());
+        }
+        write!(f, "\n-record({}, {{", self.name)?;
+        write_list_ast_nodes(f, m, &self.fields, ", ")?;
+        write!(f, "}}).")
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RecordField {
+    pub name: String,
+    pub initializer: Option<ExprId>,
+    pub type_: TypeApproximation,
+}
+impl SizedAst for RecordField {
+    fn size(&self, module: &Module) -> ASTSize {
+        1 + self.initializer.size(module)
+    }
+}
+impl AstNode for RecordField {
+    fn fmt(&self, m: &Module, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+        if let Some(initializer) = &self.initializer {
+            write!(f, " = ")?;
+            initializer.fmt(m, f)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Module {
     pub module_name: String,
@@ -871,6 +919,8 @@ pub struct Module {
     bodies: Vec<Body>,
     guard_seqs: Vec<GuardSeq>,
     guards: Vec<Guard>,
+    records: Vec<Record>,
+    record_fields: Vec<RecordField>,
 }
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -929,6 +979,9 @@ impl fmt::Display for Module {
             ", ",
         )?;
         write!(f, "]).")?;
+        for r in &self.records {
+            r.fmt(self, f)?;
+        }
         for func_decl in &self.functions {
             write!(f, "\n\n")?;
             func_decl.fmt(self, f)?;
@@ -955,6 +1008,8 @@ impl Module {
             bodies: Vec::new(),
             guard_seqs: Vec::new(),
             guards: Vec::new(),
+            records: Vec::new(),
+            record_fields: Vec::new(),
         }
     }
     pub fn expr(&self, id: ExprId) -> &Expr {
@@ -1028,6 +1083,26 @@ impl Module {
         self.guards.push(p);
         GuardId((self.guards.len() - 1).try_into().unwrap())
     }
+    pub fn record(&self, id: RecordId) -> &Record {
+        &self.records[id.0 as usize]
+    }
+    pub fn record_mut(&mut self, id: RecordId) -> &mut Record {
+        &mut self.records[id.0 as usize]
+    }
+    pub fn add_record(&mut self, r: Record) -> RecordId {
+        self.records.push(r);
+        RecordId((self.records.len() - 1).try_into().unwrap())
+    }
+    pub fn record_field(&self, id: RecordFieldId) -> &RecordField {
+        &self.record_fields[id.0 as usize]
+    }
+    pub fn record_field_mut(&mut self, id: RecordFieldId) -> &mut RecordField {
+        &mut self.record_fields[id.0 as usize]
+    }
+    pub fn add_record_field(&mut self, rf: RecordField) -> RecordFieldId {
+        self.record_fields.push(rf);
+        RecordFieldId((self.record_fields.len() - 1).try_into().unwrap())
+    }
 }
 
 pub trait NodeId {
@@ -1096,5 +1171,23 @@ impl NodeId for GuardSeqId {
     type Node = GuardSeq;
     fn get<'a>(&self, module: &'a Module) -> &'a Self::Node {
         module.guard_seq(*self)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RecordId(u32);
+impl NodeId for RecordId {
+    type Node = Record;
+    fn get<'a>(&self, module: &'a Module) -> &'a Self::Node {
+        module.record(*self)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RecordFieldId(u32);
+impl NodeId for RecordFieldId {
+    type Node = RecordField;
+    fn get<'a>(&self, module: &'a Module) -> &'a Self::Node {
+        module.record_field(*self)
     }
 }

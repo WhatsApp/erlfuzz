@@ -112,6 +112,10 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
     let mut module = Module::new(module_name, seed, config, bound_functions);
     let ctx = Context::from_config(&config);
     let mut env = Environment::new(&module, config.disable_shadowing);
+    let num_records = choose_arity(&mut rng);
+    for i in 0..num_records {
+        gen_record(&mut rng, &mut module, ctx, &mut env, i);
+    }
     for i in 0..num_function_decls {
         gen_function(&mut rng, &mut module, ctx, &mut env, i);
     }
@@ -319,6 +323,43 @@ pub fn choose_type<RngType: rand::Rng>(rng: &mut RngType) -> TypeApproximation {
     } else {
         result
     }
+}
+
+fn gen_record<RngType: rand::Rng>(
+    rng: &mut RngType,
+    module: &mut Module,
+    ctx: Context,
+    env: &mut Environment,
+    record_index: usize,
+) -> RecordId {
+    let name = format!("r{}", record_index);
+    let record_arity = choose_arity(rng);
+    let mut fields = Vec::new();
+    let mut size_to_incr = 0;
+    let new_ctx = ctx.in_record_initializer();
+    for i in 0..record_arity {
+        let field_name = format!("rf{}", i);
+        let field_type = choose_type(rng);
+        let initializer = if rng.gen::<bool>() {
+            Some(
+                env.with_single_scope(NoShadowing, Discard(SafeToReuse), |env| {
+                    recurse_any_expr(&field_type, rng, module, new_ctx, env, &mut size_to_incr)
+                }),
+            )
+        } else {
+            None
+        };
+        fields.push(module.add_record_field(RecordField {
+            name: field_name,
+            type_: field_type,
+            initializer,
+        }));
+    }
+    module.add_record(Record {
+        hidden: false,
+        name,
+        fields,
+    })
 }
 
 fn gen_function<RngType: rand::Rng>(
@@ -543,7 +584,7 @@ fn gen_pattern<RngType: rand::Rng>(
             Pattern::Float(choose_random_double(rng))
         }
         PatternKind::Underscore => Pattern::Underscore(),
-        PatternKind::UnboundVariable if !ctx.is_in_guard => {
+        PatternKind::UnboundVariable if !ctx.is_in_guard && !ctx.is_in_record_initializer => {
             Pattern::NamedVar(env.make_fresh_var(rng, wanted_type.clone()))
         }
         PatternKind::UsedVariable if !ctx.no_bound_vars => {

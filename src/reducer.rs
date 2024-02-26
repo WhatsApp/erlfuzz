@@ -28,6 +28,27 @@ pub fn reduce_module<F: Fn(&Module) -> bool>(module: &mut Module, run: &F) {
         reduce_func_decl(module, run, i);
     }
 
+    info!("      Trying to eliminate records");
+    let num_records = module.records.len();
+    let mut records_to_reduce = Vec::new();
+    for i in 0..num_records {
+        // We can't actually remove the records, because they are referred to in expressions, and it breaks the ast printing.
+        // So we just hide them instead.
+        module.records[i].hidden = true;
+        let record = module.records[i].clone();
+        let text = format!("eliminating record {}", record.name);
+        if !try_reduction_or_else(module, run, record.size(module), &text, |m: &mut Module| {
+            m.records[i].hidden = false;
+        }) {
+            records_to_reduce.push(i);
+        }
+    }
+
+    info!("      Reducing record fields");
+    for i in records_to_reduce {
+        reduce_record(module, run, i);
+    }
+
     info!("      Trying to eliminate function declarations altogether");
     for i in (0..num_functions).rev() {
         let func_decl = module.functions.remove(i);
@@ -1006,6 +1027,15 @@ fn reduce_comprehension_elements<
                 "replacing a comprehension with a single filter by that filter",
                 || filter_clone,
             );
+        }
+    }
+}
+
+fn reduce_record(module: &mut Module, run: &impl Fn(&Module) -> bool, record_index: usize) {
+    // FIXME: this clone should not be necessary, but the borrow checker is ornery.
+    for field_id in module.records[record_index].fields.clone() {
+        if let Some(expr) = module.record_field(field_id).initializer {
+            reduce_expr(module, run, expr);
         }
     }
 }
