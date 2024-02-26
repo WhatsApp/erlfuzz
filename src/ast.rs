@@ -719,6 +719,7 @@ pub enum Pattern {
     List(PatternId, PatternId),
     Bitstring(Vec<(PatternId, Option<ExprId>, TypeSpecifier)>),
     Map(Vec<(ExprId, PatternId)>),
+    Record(RecordId, Vec<(RecordFieldId, PatternId)>),
 }
 impl SizedAst for Pattern {
     fn size(&self, module: &Module) -> ASTSize {
@@ -728,6 +729,7 @@ impl SizedAst for Pattern {
             Pattern::List(head, tail) => 1 + head.size(module) + tail.size(module),
             Pattern::Bitstring(elements) => 1 + elements.size(module),
             Pattern::Map(mappings) => 1 + mappings.size(module),
+            Pattern::Record(_, fields) => 1 + fields.size(module),
             Pattern::Nil()
             | Pattern::Atom(_)
             | Pattern::Integer(_)
@@ -773,6 +775,22 @@ impl AstNode for Pattern {
                     f,
                     pairs.iter().map(|(key, value)| {
                         format!("{} := {}", with_module(*key, m), with_module(*value, m))
+                    }),
+                    ", ",
+                )?;
+                write!(f, "}}")
+            }
+            Pattern::Record(r, fields) => {
+                write!(f, "#{}", m.record(*r).name)?;
+                write!(f, "{{")?;
+                write_list_strings(
+                    f,
+                    fields.iter().map(|(field, pattern)| {
+                        format!(
+                            "{}= {}",
+                            m.record_field(*field).name,
+                            with_module(*pattern, m)
+                        )
                     }),
                     ", ",
                 )?;

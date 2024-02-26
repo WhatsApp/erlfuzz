@@ -462,6 +462,29 @@ fn recurse_pattern<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, pattern
                 reduce_pattern(module, run, *v);
             }
         }
+        Pattern::Record(r, ref mut fields) => {
+            for i in (0..fields.len()).rev() {
+                let (f, p) = fields.remove(i);
+                if try_replace_pattern!("eliminating a field of a record pattern", || {
+                    Pattern::Record(r.clone(), fields.clone())
+                }) {
+                    continue;
+                }
+                fields.insert(i, (f, p));
+            }
+            if fields.len() == 1 {
+                let new_pattern = module.pattern(fields[0].1).clone();
+                if try_replace_pattern!(
+                    "replacing a record pattern by the only field in it",
+                    || new_pattern
+                ) {
+                    return recurse_pattern(module, run, pattern_id);
+                }
+            }
+            for (_f, p) in fields {
+                reduce_pattern(module, run, *p);
+            }
+        }
     }
 }
 

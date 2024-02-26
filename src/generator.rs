@@ -473,6 +473,7 @@ enum PatternKind {
     List,
     Bitstring,
     Map,
+    Record,
 }
 
 const ALL_PATTERN_KINDS: &[PatternKind] = &[
@@ -488,6 +489,7 @@ const ALL_PATTERN_KINDS: &[PatternKind] = &[
     PatternKind::List,
     PatternKind::Bitstring,
     PatternKind::Map,
+    PatternKind::Record,
 ];
 
 fn pattern_kind_weight(kind: PatternKind) -> u32 {
@@ -504,6 +506,7 @@ fn pattern_kind_weight(kind: PatternKind) -> u32 {
         PatternKind::List => 1,
         PatternKind::Bitstring => 1,
         PatternKind::Map => 1,
+        PatternKind::Record => 1,
     }
 }
 
@@ -697,6 +700,42 @@ fn gen_pattern<RngType: rand::Rng>(
                 },
             );
             Pattern::Map(pairs)
+        }
+        PatternKind::Record if ctx.may_recurse() => {
+            if let Some(record_id) = get_compatible_records(m, wanted_type).iter().choose(rng) {
+                let mut field_patterns = Vec::new();
+                let record = m.record(*record_id);
+                let mut fields = record.fields.clone();
+                fields.shuffle(rng);
+                env.with_multi_scope_manual(
+                    MultiScopeKind::Pattern,
+                    NoShadowing,
+                    KeepUnion,
+                    |env| {
+                        for field_id in &fields {
+                            let field = m.record_field(*field_id);
+                            if rng.gen::<bool>() {
+                                continue;
+                            }
+                            field_patterns.push((
+                                *field_id,
+                                recurse_any_pattern(
+                                    &field.type_.clone(),
+                                    rng,
+                                    m,
+                                    ctx,
+                                    env,
+                                    &mut size,
+                                ),
+                            ));
+                            env.shift_to_sibling(SafeToReuse);
+                        }
+                    },
+                );
+                Pattern::Record(*record_id, field_patterns)
+            } else {
+                return None;
+            }
         }
         _ => return None,
     };
