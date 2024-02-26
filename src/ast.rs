@@ -208,6 +208,7 @@ pub enum Expr {
     MapInsertion(ExprId, ExprId, ExprId),
     MapUpdate(ExprId, ExprId, ExprId),
     RecordCreation(RecordId, Vec<(RecordFieldId, ExprId)>),
+    RecordUpdate(ExprId, RecordId, Vec<(RecordFieldId, ExprId)>),
     BitstringConstruction(Vec<(ExprId, Option<ExprId>, TypeSpecifier)>),
     Fun(Option<VarNum>, Vec<FunctionClauseId>),
     Comprehension(ComprehensionKind, ExprId, Vec<ComprehensionElement>),
@@ -245,11 +246,12 @@ impl SizedAst for Expr {
             Expr::MapComprehension(head_key, head_value, elements) => {
                 1 + head_key.size(module) + head_value.size(module) + elements.size(module)
             }
-            Expr::RecordCreation(_, fields) => {
-                fields.iter().fold(1, |acc, (_name, initializer)| {
-                    acc + initializer.size(module)
-                })
-            }
+            Expr::RecordCreation(_, fields) => fields
+                .iter()
+                .fold(1, |acc, (_, initializer)| acc + initializer.size(module)),
+            Expr::RecordUpdate(e, _, fields) => fields
+                .iter()
+                .fold(e.size(module), |acc, (_, value)| acc + value.size(module)),
             Expr::Fun(_, clauses) => 1 + clauses.size(module),
             Expr::Try(exprs, of, catch, after) => {
                 1 + exprs.size(module) + of.size(module) + catch.size(module) + after.size(module)
@@ -353,6 +355,23 @@ impl AstNode for Expr {
             Expr::RecordCreation(record_id, fields) => {
                 let name = &m.record(*record_id).name;
                 write!(f, "(#{}{{", name)?;
+                write_list_strings(
+                    f,
+                    fields.iter().map(|(field, value)| {
+                        format!(
+                            "{} = {}",
+                            m.record_field(*field).name,
+                            with_module(*value, m)
+                        )
+                    }),
+                    ", ",
+                )?;
+                write!(f, "}})")
+            }
+            Expr::RecordUpdate(e, record_id, fields) => {
+                let name = &m.record(*record_id).name;
+                // The extra parentheses are required because the compiler rejects things like "1#foo{bar=42}", but accepts "(1)#foo{bar=42}"
+                write!(f, "(({})#{}{{", with_module(*e, m), name)?;
                 write_list_strings(
                     f,
                     fields.iter().map(|(field, value)| {

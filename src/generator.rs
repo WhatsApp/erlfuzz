@@ -772,6 +772,7 @@ enum ExprKind {
     MapInsertion,
     MapUpdate,
     RecordCreation,
+    RecordUpdate,
     BitstringConstruction,
     ListComprehension,
     BitstringComprehension,
@@ -819,6 +820,7 @@ const ALL_EXPR_KINDS: &[ExprKind] = &[
     ExprKind::MapInsertion,
     ExprKind::MapUpdate,
     ExprKind::RecordCreation,
+    ExprKind::RecordUpdate,
     ExprKind::BitstringConstruction,
     ExprKind::ListComprehension,
     ExprKind::BitstringComprehension,
@@ -859,6 +861,7 @@ fn expr_kind_weight(kind: ExprKind) -> u32 {
         ExprKind::MapInsertion => 1,
         ExprKind::MapUpdate => 1,
         ExprKind::RecordCreation => 1,
+        ExprKind::RecordUpdate => 1,
         ExprKind::BitstringConstruction => 1,
         ExprKind::ListComprehension => 1,
         ExprKind::BitstringComprehension => 1,
@@ -1331,6 +1334,37 @@ fn gen_expr<RngType: rand::Rng>(
             m.add_expr(
                 Expr::RecordCreation(record_id, field_named_exprs),
                 record_id_to_type(m, record_id),
+            )
+        }
+        ExprKind::RecordUpdate if ctx.may_recurse() && !ctx.is_in_guard => {
+            let record_id = get_compatible_records(m, wanted_type)
+                .iter()
+                .choose(rng)
+                .copied()?;
+            let new_wanted_type = record_id_to_type(m, record_id);
+            let mut field_exprs = Vec::new();
+            let record = m.record(record_id);
+            let mut fields = record.fields.clone();
+            fields.shuffle(rng);
+            let num_updates = 1 + choose_arity(rng);
+            let old_record_expr_id =
+                env.with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
+                    let old_record =
+                        recurse_any_expr(&new_wanted_type, rng, m, ctx, env, &mut size);
+                    env.shift_to_sibling(NotSafeToReuse);
+                    for field_id in fields.iter().take(num_updates) {
+                        let field_type = m.record_field(*field_id).type_.clone();
+                        field_exprs.push((
+                            *field_id,
+                            recurse_any_expr(&field_type, rng, m, ctx, env, &mut size),
+                        ));
+                        env.shift_to_sibling(NotSafeToReuse);
+                    }
+                    old_record
+                });
+            m.add_expr(
+                Expr::RecordUpdate(old_record_expr_id, record_id, field_exprs),
+                new_wanted_type,
             )
         }
         // may_recurse is not needed as the bitstring may be empty.
