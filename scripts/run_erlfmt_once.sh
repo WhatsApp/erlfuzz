@@ -9,7 +9,7 @@ set -uo pipefail
 
 main() {
   max_memory_in_kb=2000000
-  timeout_in_s=3
+  timeout_in_s=30
 
   ulimit -m ${max_memory_in_kb}
 
