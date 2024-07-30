@@ -111,8 +111,7 @@ impl ScopeElement {
             Some((v_old, t_old)) if *v_old == v => {
                 trace!(
                     "push (refine case): v={}, next_available={}",
-                    v,
-                    self.next_available,
+                    v, self.next_available,
                 );
                 t_old.refine(&t);
                 return;
@@ -120,16 +119,13 @@ impl ScopeElement {
             Some((v_old, _)) => {
                 trace!(
                     "push: v_old={}, v={}, next_available={}",
-                    *v_old,
-                    v,
-                    self.next_available
+                    *v_old, v, self.next_available
                 );
                 assert!(*v_old < v);
             }
             None => trace!(
                 "push(empty case): v={}, next_available={}",
-                v,
-                self.next_available
+                v, self.next_available
             ),
         }
         assert!(v >= self.next_available);
