@@ -56,6 +56,7 @@ pub struct Config {
     pub disable_shadowing: bool,
     pub disable_maybe: bool,
     pub disable_map_comprehensions: bool,
+    pub disable_nominal: bool,
     pub deterministic: bool,
 }
 
@@ -66,15 +67,23 @@ fn choose_arity<RngType: rand::Rng>(rng: &mut RngType) -> usize {
 
 pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
     let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+    let mut module = Module::new(module_name, seed, config);
 
-    // We choose the number of functions to generate ahead of time to allow the generation of recursive cycles.
-    // For the same reason, we choose ahead of time their arities, argument types and return types.
+    // First decide on the full set of types that will exist
+    let num_custom_types = choose_arity(&mut rng);
+    for i in 0..num_custom_types {
+        let _ = if rng.gen::<bool>() {
+            gen_record_no_initializer(&mut rng, &mut module, i);
+        } else {
+            gen_newtype(&mut rng, &mut module, &config, i);
+        };
+    }
+    // Decide on the full set of functions that will exist, and their types
     let num_functions: usize = if config.wrapper_mode == WrapperMode::Printing {
         1
     } else {
         rng.gen_range(1..=10)
     };
-    let mut bound_functions: Vec<FunctionDeclaration> = Vec::new();
     for i in 0..num_functions {
         let fun_num = i + 1;
         let name = "f".to_string() + &fun_num.to_string();
@@ -95,9 +104,9 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
             } else {
                 1
             };
-            let clause_types = make_vec(num_clauses, || gen_clause_type(&mut rng, arity));
+            let clause_types = make_vec(num_clauses, || gen_clause_type(&mut rng, arity, &module));
             let function_type = join_function_types(&clause_types);
-            bound_functions.push(FunctionDeclaration {
+            module.add_function(FunctionDeclaration {
                 name: name.clone(),
                 arity,
                 clauses: Vec::new(),
@@ -108,15 +117,42 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
             });
         }
     }
-
-    let num_function_decls = bound_functions.len();
-    let mut module = Module::new(module_name, seed, config, bound_functions);
-    let ctx = Context::from_config(&config);
+    // We finally have everything to initialize the environment
+    // and in turn generate expressions
     let mut env = Environment::new(&module, config.disable_shadowing);
-    let num_records = choose_arity(&mut rng);
+    let ctx = Context::from_config(&config);
+    let num_records = module.records.len();
     for i in 0..num_records {
-        gen_record(&mut rng, &mut module, ctx, &mut env, i);
+        let ctx1 = ctx.in_record_initializer(i);
+        let num_fields = module.records[i].fields.len();
+        for j in 0..num_fields {
+            if rng.gen::<bool>() {
+                let initializer_safe_in_guard = rng.gen::<bool>();
+                let ctx2 = if initializer_safe_in_guard {
+                    ctx1.in_guard()
+                } else {
+                    ctx1
+                };
+                let mut size_to_incr = 0;
+                let record_field_id = module.records[i].fields[j];
+                // That clone is required because the borrow checker is too dumb to realize that recurse_expr modifies expressions, not record fields..
+                let field_type = module.record_field(record_field_id).type_.clone();
+                let new_expr_id = recurse_expr(
+                    &field_type,
+                    &mut rng,
+                    &mut module,
+                    ctx2,
+                    &mut env,
+                    &mut size_to_incr,
+                    ALL_EXPR_KINDS,
+                );
+                let field = module.record_field_mut(record_field_id);
+                field.initializer = Some(new_expr_id);
+                field.initializer_safe_in_guard = initializer_safe_in_guard;
+            }
+        }
     }
+    let num_function_decls = module.functions.len();
     for i in 0..num_function_decls {
         gen_function(&mut rng, &mut module, ctx, &mut env, i);
     }
@@ -127,7 +163,7 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
             module.functions.push(start_function);
         }
         WrapperMode::ForInfer => {
-            for i in 0..num_function_decls {
+            for i in 0..num_functions {
                 if module.functions[i].arity == 0 {
                     continue;
                 }
@@ -137,7 +173,7 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
             }
         }
         WrapperMode::Printing => {
-            assert!(num_function_decls == 1);
+            assert!(num_functions == 1);
             let wrapper_function =
                 gen_wrapper_function(&mut rng, &mut module, &mut env, 0, config.wrapper_mode);
             module.functions.push(wrapper_function);
@@ -150,9 +186,10 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
 fn gen_clause_type<RngType: rand::Rng>(
     rng: &mut RngType,
     arity: usize,
+    module: &Module,
 ) -> FunctionTypeApproximation {
-    let return_type = choose_type(rng);
-    let arg_types = make_vec(arity, || choose_type(rng));
+    let return_type = choose_type(rng, module);
+    let arg_types = make_vec(arity, || choose_type(rng, module));
     FunctionTypeApproximation {
         return_type,
         arg_types,
@@ -289,9 +326,10 @@ where
     v
 }
 
-pub fn choose_type<RngType: rand::Rng>(rng: &mut RngType) -> TypeApproximation {
+// TODO: generate records and new types
+pub fn choose_type<RngType: rand::Rng>(rng: &mut RngType, module: &Module) -> TypeApproximation {
     let any_list = List(Box::new(Any));
-    let result = [
+    let mut type_choices = vec![
         Any,
         Integer,
         Float,
@@ -309,64 +347,94 @@ pub fn choose_type<RngType: rand::Rng>(rng: &mut RngType) -> TypeApproximation {
         Bottom,
         ets_table_type(),
         Union(vec![]),
-    ]
-    .into_iter()
-    .choose(rng)
-    .unwrap();
+    ];
+    // TODO: these two checks could be done only once, adding all the right choices (with some weights obviously)
+    if !module.new_type_defs.is_empty() {
+        // TODO: have some method on modules to return a random new_type_def instead
+        let index = rng.gen_range(0..module.new_type_defs.len());
+        let new_type_def_id = NewTypeId(index.try_into().unwrap());
+        let new_type_def = module.new_type_def(new_type_def_id);
+        type_choices.push(NewType(
+            new_type_def_id,
+            new_type_def.kind,
+            new_type_def.name.clone(),
+            Box::new(new_type_def.def.clone()),
+        ));
+    }
+    if !module.records.is_empty() {
+        // TODO: have some method on modules to return a random record instead
+        let index = rng.gen_range(0..module.records.len());
+        let record_id = RecordId(index.try_into().unwrap());
+        let record = module.record(record_id);
+        let field_types = record
+            .fields
+            .iter()
+            .map(|field_id| {
+                let field = module.record_field(*field_id);
+                (field.name.clone(), field.type_.clone())
+            })
+            .collect::<Vec<_>>();
+        type_choices.push(RecordType(record_id, record.name.clone(), field_types));
+    }
+    let result = type_choices.into_iter().choose(rng).unwrap();
     if let Union(_) = result {
         let arity = max(1, choose_arity(rng));
-        Union(make_vec(arity, || choose_type(rng)))
+        Union(make_vec(arity, || choose_type(rng, module)))
     } else if result == any_list && rng.gen::<bool>() {
-        List(Box::new(choose_type(rng)))
+        List(Box::new(choose_type(rng, module)))
     } else if result == AnyTuple && rng.gen::<bool>() {
         let arity = max(1, choose_arity(rng));
-        Tuple(make_vec(arity, || choose_type(rng)))
+        Tuple(make_vec(arity, || choose_type(rng, module)))
     } else {
         result
     }
 }
 
-fn gen_record<RngType: rand::Rng>(
+fn gen_newtype<RngType: rand::Rng>(
     rng: &mut RngType,
     module: &mut Module,
-    ctx: Context,
-    env: &mut Environment,
+    config: &Config,
+    newtype_index: usize,
+) -> NewTypeId {
+    let kind = if config.disable_nominal {
+        [NewTypeKind::Opaque, NewTypeKind::Type]
+            .into_iter()
+            .choose(rng)
+            .unwrap()
+    } else {
+        [NewTypeKind::Opaque, NewTypeKind::Nominal, NewTypeKind::Type]
+            .into_iter()
+            .choose(rng)
+            .unwrap()
+    };
+    let def = choose_type(rng, module);
+    module.add_new_type_def(NewTypeDef {
+        name: format!("t{}", newtype_index),
+        kind,
+        def,
+    })
+}
+
+fn gen_record_no_initializer<RngType: rand::Rng>(
+    rng: &mut RngType,
+    module: &mut Module,
     record_index: usize,
 ) -> RecordId {
-    let name = format!("r{}", record_index);
     let record_arity = choose_arity(rng);
     let mut fields = Vec::new();
-    let mut size_to_incr = 0;
-    let new_ctx = ctx.in_record_initializer();
     for i in 0..record_arity {
         let field_name = format!("rf{}", i);
-        let field_type = choose_type(rng);
-        let mut in_guard = false;
-        let initializer = if rng.gen::<bool>() {
-            in_guard = rng.gen::<bool>();
-            let actual_ctx = if in_guard {
-                new_ctx.in_guard()
-            } else {
-                new_ctx
-            };
-            Some(
-                env.with_single_scope(NoShadowing, Discard(SafeToReuse), |env| {
-                    recurse_any_expr(&field_type, rng, module, actual_ctx, env, &mut size_to_incr)
-                }),
-            )
-        } else {
-            None
-        };
+        let type_ = choose_type(rng, module);
         fields.push(module.add_record_field(RecordField {
             name: field_name,
-            type_: field_type,
-            initializer,
-            initializer_safe_in_guard: in_guard,
+            type_,
+            initializer: None,
+            initializer_safe_in_guard: false,
         }));
     }
     module.add_record(Record {
         hidden: false,
-        name,
+        name: format!("r{}", record_index),
         fields,
     })
 }
@@ -596,7 +664,9 @@ fn gen_pattern<RngType: rand::Rng>(
             Pattern::Float(choose_random_double(rng))
         }
         PatternKind::Underscore => Pattern::Underscore(),
-        PatternKind::UnboundVariable if !ctx.is_in_guard && !ctx.is_in_record_initializer => {
+        PatternKind::UnboundVariable
+            if !ctx.is_in_guard && ctx.is_in_record_initializer == None =>
+        {
             Pattern::NamedVar(env.make_fresh_var(rng, wanted_type.clone()))
         }
         PatternKind::UsedVariable if !ctx.no_bound_vars => {
@@ -702,7 +772,11 @@ fn gen_pattern<RngType: rand::Rng>(
             Pattern::Map(pairs)
         }
         PatternKind::Record if ctx.may_recurse() => {
-            if let Some(record_id) = get_compatible_records(m, wanted_type).iter().choose(rng) {
+            if let Some(record_id) =
+                get_compatible_records(m, wanted_type, ctx.is_in_record_initializer)
+                    .iter()
+                    .choose(rng)
+            {
                 let mut field_patterns = Vec::new();
                 let record = m.record(*record_id);
                 let mut fields = record.fields.clone();
@@ -1310,7 +1384,7 @@ fn gen_expr<RngType: rand::Rng>(
                 m.add_expr(Expr::MapUpdate(map, k, v), Map)
             }),
         ExprKind::RecordCreation if ctx.may_recurse() => {
-            let record_id = get_compatible_records(m, wanted_type)
+            let record_id = get_compatible_records(m, wanted_type, ctx.is_in_record_initializer)
                 .iter()
                 .choose(rng)
                 .copied()?;
@@ -1340,7 +1414,7 @@ fn gen_expr<RngType: rand::Rng>(
             )
         }
         ExprKind::RecordUpdate if ctx.may_recurse() && !ctx.is_in_guard => {
-            let record_id = get_compatible_records(m, wanted_type)
+            let record_id = get_compatible_records(m, wanted_type, ctx.is_in_record_initializer)
                 .iter()
                 .choose(rng)
                 .copied()?;
@@ -1371,7 +1445,9 @@ fn gen_expr<RngType: rand::Rng>(
             )
         }
         ExprKind::RecordIndex if Integer.is_subtype_of(wanted_type) => {
-            let (record_id, record) = m.all_records_by_id().choose(rng)?;
+            let (record_id, record) = m
+                .all_records_by_id(ctx.is_in_record_initializer)
+                .choose(rng)?;
             let record_field_id = record.fields.iter().choose(rng)?;
             m.add_expr(Expr::RecordIndex(record_id, *record_field_id), Integer)
         }
@@ -1485,7 +1561,7 @@ fn gen_expr<RngType: rand::Rng>(
                 let arity = choose_arity(rng);
                 let mut clauses = Vec::new();
                 loop {
-                    let clause_type = gen_clause_type(rng, arity);
+                    let clause_type = gen_clause_type(rng, arity, m);
                     clauses.push(
                         // See previous comment for why NoShadowing is important here
                         env.with_single_scope(NoShadowing, Discard(SafeToReuse), |env| {
@@ -1542,16 +1618,23 @@ fn record_id_to_type(m: &Module, record_id: RecordId) -> TypeApproximation {
     RecordType(record_id, record.name.clone(), fields)
 }
 
-fn get_compatible_records(m: &Module, wanted_type: &TypeApproximation) -> Vec<RecordId> {
+fn get_compatible_records(
+    m: &Module,
+    wanted_type: &TypeApproximation,
+    upper_bound: Option<usize>,
+) -> Vec<RecordId> {
     match wanted_type {
-        RecordType(id, _, _) => vec![*id],
+        RecordType(id @ RecordId(actual_index), _, _) => match upper_bound {
+            Some(n) if n > (*actual_index).try_into().unwrap() => vec![*id],
+            _ => vec![],
+        },
         Union(ts) => ts
             .iter()
-            .flat_map(|t| get_compatible_records(m, t))
+            .flat_map(|t| get_compatible_records(m, t, upper_bound))
             .collect(),
-        Any | AnyTuple => m.all_records_by_id().map(|(id, _)| id).collect(),
+        Any | AnyTuple => m.all_records_by_id(upper_bound).map(|(id, _)| id).collect(),
         Tuple(elements) => m
-            .all_records_by_id()
+            .all_records_by_id(upper_bound)
             .filter_map(|(id, r)| {
                 if r.fields.len() == elements.len()
                     && r.fields

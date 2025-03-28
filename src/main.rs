@@ -110,6 +110,8 @@ struct Cli {
     /// Do not generate code which makes use of map comprehensions
     #[clap(long, value_parser, default_value_t = false)]
     disable_map_comprehensions: bool,
+    #[clap(long, value_parser, default_value_t = false)]
+    disable_nominal: bool,
     /// Whether to generate code which may evaluate differently on different runs,
     /// for example, code which makes use of pids, references and ports.
     #[clap(long, value_parser, default_value_t = false)]
@@ -124,6 +126,7 @@ impl Cli {
             disable_shadowing,
             disable_maybe,
             disable_map_comprehensions,
+            disable_nominal,
             deterministic,
             ..
         } = self;
@@ -134,6 +137,7 @@ impl Cli {
             disable_shadowing: *disable_shadowing,
             disable_maybe: *disable_maybe,
             disable_map_comprehensions: *disable_map_comprehensions,
+            disable_nominal: *disable_nominal,
             deterministic: *deterministic,
         }
     }

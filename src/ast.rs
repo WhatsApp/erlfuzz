@@ -925,6 +925,33 @@ impl AstNode for FunctionDeclaration {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum NewTypeKind {
+    Opaque,
+    Type,
+    Nominal,
+}
+#[derive(Clone, Debug)]
+pub struct NewTypeDef {
+    pub name: String,
+    pub kind: NewTypeKind,
+    pub def: TypeApproximation,
+}
+impl SizedAst for NewTypeDef {
+    fn size(&self, _m: &Module) -> ASTSize {
+        return 1; // TODO: get size of the type approximation
+    }
+}
+impl AstNode for NewTypeDef {
+    fn fmt(&self, _m: &Module, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            NewTypeKind::Opaque => write!(f, "\n-opaque {}() :: {}.", self.name, self.def),
+            NewTypeKind::Type => write!(f, "\n-type {}() :: {}.", self.name, self.def),
+            NewTypeKind::Nominal => write!(f, "\n-nominal {}() :: {}.", self.name, self.def),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Record {
     pub fields: Vec<RecordFieldId>,
@@ -936,7 +963,7 @@ impl SizedAst for Record {
         if self.hidden {
             0
         } else {
-            1 + self.fields.size(module)
+            1 + self.fields.size(module) // TODO: get size of the type approximations
         }
     }
 }
@@ -975,6 +1002,12 @@ impl AstNode for RecordField {
 }
 
 #[derive(Clone, Debug)]
+enum TypeDeclUnion {
+    NewType(NewTypeId),
+    Record(RecordId),
+}
+
+#[derive(Clone, Debug)]
 pub struct Module {
     pub module_name: String,
     pub initial_seed: u64,
@@ -988,7 +1021,9 @@ pub struct Module {
     guard_seqs: Vec<GuardSeq>,
     guards: Vec<Guard>,
     pub records: Vec<Record>,
-    record_fields: Vec<RecordField>,
+    pub record_fields: Vec<RecordField>,
+    pub new_type_defs: Vec<NewTypeDef>,
+    type_decl_ordering: Vec<TypeDeclUnion>,
 }
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1047,8 +1082,15 @@ impl fmt::Display for Module {
             ", ",
         )?;
         write!(f, "]).")?;
-        for r in &self.records {
-            r.fmt(self, f)?;
+        for t in &self.type_decl_ordering {
+            match t {
+                TypeDeclUnion::NewType(t) => {
+                    self.new_type_def(*t).fmt(self, f)?;
+                }
+                TypeDeclUnion::Record(t) => {
+                    self.record(*t).fmt(self, f)?;
+                }
+            }
         }
         for func_decl in &self.functions {
             write!(f, "\n\n")?;
@@ -1058,17 +1100,12 @@ impl fmt::Display for Module {
     }
 }
 impl Module {
-    pub fn new(
-        module_name: &str,
-        initial_seed: u64,
-        config: Config,
-        functions: Vec<FunctionDeclaration>,
-    ) -> Self {
+    pub fn new(module_name: &str, initial_seed: u64, config: Config) -> Self {
         Self {
             module_name: module_name.to_owned(),
             initial_seed,
             config,
-            functions,
+            functions: Vec::new(),
             patterns: Vec::new(),
             exprs: Vec::new(),
             expr_types: Vec::new(),
@@ -1078,6 +1115,8 @@ impl Module {
             guards: Vec::new(),
             records: Vec::new(),
             record_fields: Vec::new(),
+            new_type_defs: Vec::new(),
+            type_decl_ordering: Vec::new(),
         }
     }
     pub fn expr(&self, id: ExprId) -> &Expr {
@@ -1121,6 +1160,13 @@ impl Module {
         self.function_clauses.push(p);
         FunctionClauseId((self.function_clauses.len() - 1).try_into().unwrap())
     }
+    pub fn function(&self, id: FunctionDeclarationId) -> &FunctionDeclaration {
+        &self.functions[id.0 as usize]
+    }
+    pub fn add_function(&mut self, p: FunctionDeclaration) -> FunctionDeclarationId {
+        self.functions.push(p);
+        FunctionDeclarationId((self.functions.len() - 1).try_into().unwrap())
+    }
     pub fn body(&self, id: BodyId) -> &Body {
         &self.bodies[id.0 as usize]
     }
@@ -1151,6 +1197,18 @@ impl Module {
         self.guards.push(p);
         GuardId((self.guards.len() - 1).try_into().unwrap())
     }
+    pub fn new_type_def(&self, id: NewTypeId) -> &NewTypeDef {
+        &self.new_type_defs[id.0 as usize]
+    }
+    pub fn new_type_def_mut(&mut self, id: NewTypeId) -> &mut NewTypeDef {
+        &mut self.new_type_defs[id.0 as usize]
+    }
+    pub fn add_new_type_def(&mut self, r: NewTypeDef) -> NewTypeId {
+        let result = NewTypeId(self.new_type_defs.len().try_into().unwrap());
+        self.new_type_defs.push(r);
+        self.type_decl_ordering.push(TypeDeclUnion::NewType(result));
+        result
+    }
     pub fn record(&self, id: RecordId) -> &Record {
         &self.records[id.0 as usize]
     }
@@ -1158,8 +1216,10 @@ impl Module {
         &mut self.records[id.0 as usize]
     }
     pub fn add_record(&mut self, r: Record) -> RecordId {
+        let result = RecordId(self.records.len().try_into().unwrap());
+        self.type_decl_ordering.push(TypeDeclUnion::Record(result));
         self.records.push(r);
-        RecordId((self.records.len() - 1).try_into().unwrap())
+        result
     }
     pub fn record_field(&self, id: RecordFieldId) -> &RecordField {
         &self.record_fields[id.0 as usize]
@@ -1171,9 +1231,13 @@ impl Module {
         self.record_fields.push(rf);
         RecordFieldId((self.record_fields.len() - 1).try_into().unwrap())
     }
-    pub fn all_records_by_id(&self) -> impl Iterator<Item = (RecordId, &Record)> + '_ {
+    pub fn all_records_by_id(
+        &self,
+        upper_bound: Option<usize>,
+    ) -> impl Iterator<Item = (RecordId, &Record)> + '_ {
         self.records
             .iter()
+            .take(upper_bound.unwrap_or(self.records.len()))
             .enumerate()
             .map(|(i, r)| (RecordId(i as u32), r))
     }
@@ -1209,6 +1273,15 @@ impl NodeId for PatternId {
     type Node = Pattern;
     fn get<'a>(&self, module: &'a Module) -> &'a Self::Node {
         module.pattern(*self)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FunctionDeclarationId(u32);
+impl NodeId for FunctionDeclarationId {
+    type Node = FunctionDeclaration;
+    fn get<'a>(&self, module: &'a Module) -> &'a Self::Node {
+        module.function(*self)
     }
 }
 
@@ -1249,7 +1322,16 @@ impl NodeId for GuardSeqId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RecordId(u32);
+pub struct NewTypeId(pub u32);
+impl NodeId for NewTypeId {
+    type Node = NewTypeDef;
+    fn get<'a>(&self, module: &'a Module) -> &'a Self::Node {
+        module.new_type_def(*self)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordId(pub u32);
 impl NodeId for RecordId {
     type Node = Record;
     fn get<'a>(&self, module: &'a Module) -> &'a Self::Node {

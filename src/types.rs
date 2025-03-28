@@ -9,6 +9,8 @@ use std::iter::zip;
 
 use TypeApproximation::*;
 
+use crate::ast::NewTypeId;
+use crate::ast::NewTypeKind;
 use crate::ast::RecordId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +24,7 @@ pub enum TypeApproximation {
     // Note that all the information is duplicated between the record in the module and here.
     // This is because we don't have access to the module when manipulating the type.
     RecordType(RecordId, String, Vec<(String, TypeApproximation)>),
+    NewType(NewTypeId, NewTypeKind, String, Box<TypeApproximation>),
     Atom,
     List(Box<TypeApproximation>),
     Map,
@@ -60,6 +63,7 @@ impl TypeApproximation {
                 .zip(ts2.iter())
                 .all(|(t1, t2)| t1.is_subtype_of(t2)),
             (List(t1), List(t2)) => t1.is_subtype_of(t2),
+            (NewType(_, _, _, t1), NewType(_, _, _, t2)) => t1.is_subtype_of(t2), // TODO: check kind
             _ => false,
         }
     }
@@ -103,7 +107,7 @@ impl TypeApproximation {
             }
             (t, _) => {
                 *t = Bottom;
-            }
+            } // TODO: refine NewType
         }
     }
 }
@@ -169,6 +173,7 @@ impl fmt::Display for TypeApproximation {
             Bottom => write!(f, "none()"),
             SpecificAtom(a) => write!(f, "'{}'", a),
             RecordType(_, name, _) => write!(f, "#{}{{}}", name),
+            NewType(_, _, name, _) => write!(f, "{}()", name),
             EtsTableName => write!(f, "atom()"),
             EtsTableId => write!(f, "ets:tid()"),
             t if *t == boolean_type() => write!(f, "boolean()"),

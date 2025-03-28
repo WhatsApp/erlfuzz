@@ -11,8 +11,9 @@ pub struct Context {
     pub is_in_guard: bool,
     // "binary fields without size are not allowed in patterns of bit string generators"
     pub is_in_bitstring_generator: bool,
-    // "The default value for a field is an arbitrary expression, except that it must not use any variables.""
-    pub is_in_record_initializer: bool,
+    // "The default value for a field is an arbitrary expression, except that it must not use any variables."
+    // Additionally, it is not allowed to refer to a record, unless it is before this one.
+    pub is_in_record_initializer: Option<usize>,
     pub recursion_depth: u16,
     pub max_recursion_depth: u16,
     pub allowed_size: ASTSize, // can be negative if we've gone a bit beyond the limit.
@@ -30,7 +31,7 @@ impl Context {
             max_recursion_depth: 0,
             is_in_guard: false,
             is_in_bitstring_generator: false,
-            is_in_record_initializer: false,
+            is_in_record_initializer: None,
             no_bound_vars: false,
             maybe_is_allowed: true,
             map_comprehensions_are_allowed: true,
@@ -69,9 +70,9 @@ impl Context {
             ..*self
         }
     }
-    pub fn in_record_initializer(&self) -> Self {
+    pub fn in_record_initializer(&self, record_index: usize) -> Self {
         Context {
-            is_in_record_initializer: true,
+            is_in_record_initializer: Some(record_index),
             ..*self
         }
     }
