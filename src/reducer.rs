@@ -786,6 +786,13 @@ fn recurse_expr<F: Fn(&Module) -> bool>(module: &mut Module, run: &F, expr_id: E
                 reduce_expr(module, run, *e2);
             }
         }
+        Expr::RecordAccess(e_id, _, _) => {
+            let e = module.expr(e_id).clone();
+            if try_replace_expr!("replacing a record access by its first operand", || e) {
+                return recurse_expr(module, run, expr_id);
+            }
+            reduce_expr(module, run, e_id);
+        }
         Expr::BitstringConstruction(ref mut elements) => {
             // TODO: add another reduction, that removes size/type-specifier.
             for i in (0..elements.len()).rev() {

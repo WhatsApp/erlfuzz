@@ -847,6 +847,7 @@ enum ExprKind {
     MapUpdate,
     RecordCreation,
     RecordUpdate,
+    RecordAccess,
     RecordIndex,
     BitstringConstruction,
     ListComprehension,
@@ -896,6 +897,7 @@ const ALL_EXPR_KINDS: &[ExprKind] = &[
     ExprKind::MapUpdate,
     ExprKind::RecordCreation,
     ExprKind::RecordUpdate,
+    ExprKind::RecordAccess,
     ExprKind::RecordIndex,
     ExprKind::BitstringConstruction,
     ExprKind::ListComprehension,
@@ -938,6 +940,7 @@ fn expr_kind_weight(kind: ExprKind) -> u32 {
         ExprKind::MapUpdate => 1,
         ExprKind::RecordCreation => 1,
         ExprKind::RecordUpdate => 1,
+        ExprKind::RecordAccess => 1,
         ExprKind::RecordIndex => 1,
         ExprKind::BitstringConstruction => 1,
         ExprKind::ListComprehension => 1,
@@ -1442,6 +1445,27 @@ fn gen_expr<RngType: rand::Rng>(
             m.add_expr(
                 Expr::RecordUpdate(old_record_expr_id, record_id, field_exprs),
                 new_wanted_type,
+            )
+        }
+        // It is technically allowed in guards, but it currently causes a compilation time explosion in erlc..
+        ExprKind::RecordAccess if ctx.may_recurse() && !ctx.is_in_guard => {
+            let (record_id, record_field_id) = m
+                .all_records_by_id(ctx.is_in_record_initializer)
+                .flat_map(|(rid, r)| r.fields.iter().map(move |field_id| (rid, *field_id)))
+                .filter(|(_, field_id)| m.record_field(*field_id).type_.is_subtype_of(wanted_type))
+                .choose(rng)?;
+            let record_expr = recurse_any_expr(
+                &record_id_to_type(m, record_id),
+                rng,
+                m,
+                ctx,
+                env,
+                &mut size,
+            );
+            let type_ = m.record_field(record_field_id).type_.clone();
+            m.add_expr(
+                Expr::RecordAccess(record_expr, record_id, record_field_id),
+                type_,
             )
         }
         ExprKind::RecordIndex if Integer.is_subtype_of(wanted_type) => {

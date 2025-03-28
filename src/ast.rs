@@ -209,6 +209,7 @@ pub enum Expr {
     MapUpdate(ExprId, ExprId, ExprId),
     RecordCreation(RecordId, Vec<(RecordFieldId, ExprId)>),
     RecordUpdate(ExprId, RecordId, Vec<(RecordFieldId, ExprId)>),
+    RecordAccess(ExprId, RecordId, RecordFieldId),
     RecordIndex(RecordId, RecordFieldId),
     BitstringConstruction(Vec<(ExprId, Option<ExprId>, TypeSpecifier)>),
     Fun(Option<VarNum>, Vec<FunctionClauseId>),
@@ -253,6 +254,7 @@ impl SizedAst for Expr {
             Expr::RecordUpdate(e, _, fields) => fields
                 .iter()
                 .fold(e.size(module), |acc, (_, value)| acc + value.size(module)),
+            Expr::RecordAccess(e, _, _) => 1 + e.size(module),
             Expr::Fun(_, clauses) => 1 + clauses.size(module),
             Expr::Try(exprs, of, catch, after) => {
                 1 + exprs.size(module) + of.size(module) + catch.size(module) + after.size(module)
@@ -387,6 +389,14 @@ impl AstNode for Expr {
                 )?;
                 write!(f, "}})")
             }
+            Expr::RecordAccess(e, record_id, field_id) => write!(
+                f,
+                // The extra parentheses are required because the compiler rejects things like "1#foo.bar", but accepts "(1)#foo.bar"
+                "(({})#{}.{})",
+                with_module(*e, m),
+                m.record(*record_id).name,
+                m.record_field(*field_id).name
+            ),
             Expr::RecordIndex(record_id, field_id) => write!(
                 f,
                 "(#{}.{})",
