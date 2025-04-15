@@ -8,11 +8,11 @@ use std::cmp::Eq;
 use std::fmt;
 
 use num_bigint::BigInt;
+use rand::Rng;
+use rand::SeedableRng;
 use rand::distributions::DistString;
 use rand::prelude::IteratorRandom;
 use rand::prelude::SliceRandom;
-use rand::Rng;
-use rand::SeedableRng;
 use rand_distr::Binomial;
 use rand_distr::Distribution;
 use rand_distr::WeightedIndex;

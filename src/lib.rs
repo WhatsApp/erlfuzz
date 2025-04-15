@@ -15,9 +15,9 @@ mod types;
 
 pub use ast::Module;
 pub use core_types::ASTSize;
-pub use generator::gen_module;
 pub use generator::Config;
 pub use generator::WrapperMode;
+pub use generator::gen_module;
 pub use reducer::reduce_module;
 pub use stdlib::get_erlang_functions;
 pub use stdlib::get_list_functions;

@@ -5,16 +5,16 @@
  */
 use std::fmt;
 
-use num_bigint::BigInt;
 use BinaryOperator::*;
 use UnaryOperator::*;
+use num_bigint::BigInt;
 
+use crate::Config;
 use crate::core_types::*;
 use crate::generator::WrapperMode;
-use crate::types::write_list_strings;
 use crate::types::FunctionTypeApproximation;
 use crate::types::TypeApproximation;
-use crate::Config;
+use crate::types::write_list_strings;
 
 pub trait SizedAst {
     fn size(&self, module: &Module) -> ASTSize;
