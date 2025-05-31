@@ -9,7 +9,7 @@ categories = ["command-line-utilities", "development-tools", "development-tools:
 
 [dependencies]
 clap = { version = "4.4.18", features = ["derive"] }
-env_logger = "0.10.2"
+env_logger = "0.11.8"
 log = "0.4.20"
 num-bigint = { version = "0.4.4", features = ["rand"] }
 rand = "0.8.5"
