@@ -16,3 +16,7 @@ rand = "0.8.5"
 rand_chacha = "0.3.1"
 rand_distr = "0.4.3"
 triple_accel = "0.4.0"
+
+[profile.release]
+codegen-units = 1
+lto = true
