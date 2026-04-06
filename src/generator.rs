@@ -72,7 +72,7 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
     // First decide on the full set of types that will exist
     let num_custom_types = choose_arity(&mut rng);
     for i in 0..num_custom_types {
-        let _ = if rng.gen::<bool>() {
+        let _ = if rng.random::<bool>() {
             gen_record_no_initializer(&mut rng, &mut module, i);
         } else {
             gen_newtype(&mut rng, &mut module, &config, i);
@@ -82,7 +82,7 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
     let num_functions: usize = if config.wrapper_mode == WrapperMode::Printing {
         1
     } else {
-        rng.gen_range(1..=10)
+        rng.random_range(1..=10)
     };
     for i in 0..num_functions {
         let fun_num = i + 1;
@@ -90,7 +90,7 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
         let num_arity_variants = if config.wrapper_mode == WrapperMode::Printing {
             1
         } else {
-            rng.gen_range(1..=3)
+            rng.random_range(1..=3)
         };
         let mut arities = make_vec(num_arity_variants, || choose_arity(&mut rng));
         arities.sort_unstable();
@@ -112,8 +112,8 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
                 clauses: Vec::new(),
                 clause_types,
                 function_type,
-                exported: rng.gen::<bool>(),
-                visible_spec: rng.gen::<bool>(),
+                exported: rng.random::<bool>(),
+                visible_spec: rng.random::<bool>(),
             });
         }
     }
@@ -126,8 +126,8 @@ pub fn gen_module(module_name: &str, seed: u64, config: Config) -> Module {
         let ctx1 = ctx.in_record_initializer(i);
         let num_fields = module.records[i].fields.len();
         for j in 0..num_fields {
-            if rng.gen::<bool>() {
-                let initializer_safe_in_guard = rng.gen::<bool>();
+            if rng.random::<bool>() {
+                let initializer_safe_in_guard = rng.random::<bool>();
                 let ctx2 = if initializer_safe_in_guard {
                     ctx1.in_guard()
                 } else {
@@ -351,7 +351,7 @@ pub fn choose_type<RngType: rand::Rng>(rng: &mut RngType, module: &Module) -> Ty
     // TODO: these two checks could be done only once, adding all the right choices (with some weights obviously)
     if !module.new_type_defs.is_empty() {
         // TODO: have some method on modules to return a random new_type_def instead
-        let index = rng.gen_range(0..module.new_type_defs.len());
+        let index = rng.random_range(0..module.new_type_defs.len());
         let new_type_def_id = NewTypeId(index.try_into().unwrap());
         let new_type_def = module.new_type_def(new_type_def_id);
         type_choices.push(NewType(
@@ -363,7 +363,7 @@ pub fn choose_type<RngType: rand::Rng>(rng: &mut RngType, module: &Module) -> Ty
     }
     if !module.records.is_empty() {
         // TODO: have some method on modules to return a random record instead
-        let index = rng.gen_range(0..module.records.len());
+        let index = rng.random_range(0..module.records.len());
         let record_id = RecordId(index.try_into().unwrap());
         let record = module.record(record_id);
         let field_types = record
@@ -380,9 +380,9 @@ pub fn choose_type<RngType: rand::Rng>(rng: &mut RngType, module: &Module) -> Ty
     if let Union(_) = result {
         let arity = max(1, choose_arity(rng));
         Union(make_vec(arity, || choose_type(rng, module)))
-    } else if result == any_list && rng.gen::<bool>() {
+    } else if result == any_list && rng.random::<bool>() {
         List(Box::new(choose_type(rng, module)))
-    } else if result == AnyTuple && rng.gen::<bool>() {
+    } else if result == AnyTuple && rng.random::<bool>() {
         let arity = max(1, choose_arity(rng));
         Tuple(make_vec(arity, || choose_type(rng, module)))
     } else {
@@ -587,7 +587,7 @@ fn recurse_any_pattern<RngType: rand::Rng>(
     size_to_incr: &mut ASTSize,
 ) -> PatternId {
     // Occasionally generate completely/trivially ill-typed patterns on purpose.
-    let wanted_type = if rng.gen_bool(0.01) {
+    let wanted_type = if rng.random_bool(0.01) {
         &Any
     } else {
         wanted_type
@@ -715,7 +715,10 @@ fn gen_pattern<RngType: rand::Rng>(
                     TypeSpecifierKind::Utf8
                     | TypeSpecifierKind::Utf16
                     | TypeSpecifierKind::Utf32 => None,
-                    _ if i == arity - 1 && !ctx.is_in_bitstring_generator && rng.gen::<bool>() => {
+                    _ if i == arity - 1
+                        && !ctx.is_in_bitstring_generator
+                        && rng.random::<bool>() =>
+                    {
                         None
                     }
                     _ => Some(recurse_any_expr(
@@ -788,7 +791,7 @@ fn gen_pattern<RngType: rand::Rng>(
                     |env| {
                         for field_id in &fields {
                             let field = m.record_field(*field_id);
-                            if rng.gen::<bool>() {
+                            if rng.random::<bool>() {
                                 continue;
                             }
                             field_patterns.push((
@@ -963,7 +966,7 @@ fn recurse_any_expr<RngType: rand::Rng>(
     size_to_incr: &mut ASTSize,
 ) -> ExprId {
     // Occasionally generate completely/trivially ill-typed expressions on purpose.
-    let wanted_type = if rng.gen_bool(0.01) {
+    let wanted_type = if rng.random_bool(0.01) {
         &Any
     } else {
         wanted_type
@@ -1164,7 +1167,7 @@ fn gen_expr<RngType: rand::Rng>(
                 );
 
                 let exprs_type = m.body_type(exprs).clone();
-                let of = if rng.gen::<bool>() {
+                let of = if rng.random::<bool>() {
                     Some(gen_cases(
                         &exprs_type,
                         wanted_type,
@@ -1227,7 +1230,7 @@ fn gen_expr<RngType: rand::Rng>(
             let exprs = env.with_single_scope(NoShadowing, Discard(NotSafeToReuse), |env| {
                 // TODO: the last one should have type wanted_type rather than Any
                 make_vec(arity, || {
-                    if rng.gen::<bool>() {
+                    if rng.random::<bool>() {
                         let e = recurse_any_expr(&Any, rng, m, ctx, env, &mut size);
                         // TODO: should be the type of e instead
                         let p = recurse_any_pattern(&Any, rng, m, ctx, env, &mut size);
@@ -1239,7 +1242,7 @@ fn gen_expr<RngType: rand::Rng>(
                 })
             });
 
-            let else_section = if rng.gen::<bool>() {
+            let else_section = if rng.random::<bool>() {
                 Some(
                     env.with_single_scope(NoShadowing, Discard(NotSafeToReuse), |env| {
                         gen_cases(&Any, wanted_type, rng, m, ctx, env, &mut size)
@@ -1398,7 +1401,7 @@ fn gen_expr<RngType: rand::Rng>(
             env.with_multi_scope_manual(MultiScopeKind::Expr, NoShadowing, KeepUnion, |env| {
                 for field_id in &fields {
                     let field = m.record_field(*field_id);
-                    if rng.gen::<bool>()
+                    if rng.random::<bool>()
                         && field.initializer.is_some()
                         && (field.initializer_safe_in_guard || !ctx.is_in_guard)
                     {
@@ -1498,7 +1501,7 @@ fn gen_expr<RngType: rand::Rng>(
                         TypeSpecifierKind::Utf8
                         | TypeSpecifierKind::Utf16
                         | TypeSpecifierKind::Utf32 => None,
-                        _ if rng.gen::<bool>() => None,
+                        _ if rng.random::<bool>() => None,
                         _ => Some(recurse_any_expr(&Integer, rng, m, ctx, env, size_to_incr)),
                     };
                     let specifier = gen_type_specifier(
@@ -1575,7 +1578,7 @@ fn gen_expr<RngType: rand::Rng>(
                 // Variables bound in a fun body are local to the fun body."
                 // "the function name is optional and is to be a variable, if any"
                 let fun_var_name = env.with_single_scope(Shadowing, Overwrite, |env| {
-                    rng.gen::<bool>().then(|| env.make_fresh_var(rng, Fun))
+                    rng.random::<bool>().then(|| env.make_fresh_var(rng, Fun))
                 });
                 let fun_name = if let Some(v) = fun_var_name {
                     format!("_V{}", v)
@@ -1600,7 +1603,7 @@ fn gen_expr<RngType: rand::Rng>(
                             )
                         }),
                     );
-                    if rng.gen::<bool>() {
+                    if rng.random::<bool>() {
                         break;
                     }
                 }
@@ -1812,7 +1815,7 @@ fn gen_body<RngType: rand::Rng>(
 ) -> BodyId {
     let mut es = Vec::new();
     let mut size = 1;
-    while size < ctx.allowed_size && rng.gen::<bool>() {
+    while size < ctx.allowed_size && rng.random::<bool>() {
         let e = recurse_any_expr(&Any, rng, module, ctx, env, &mut size);
         es.push(e);
     }
@@ -1833,13 +1836,13 @@ fn gen_guard<RngType: rand::Rng>(
     let mut guard_seqs = Vec::new();
     let mut size = 1;
     // A guard is made of 0 or more guard sequences.
-    while size < ctx.allowed_size && rng.gen::<bool>() {
+    while size < ctx.allowed_size && rng.random::<bool>() {
         let mut guard_exprs = Vec::new();
         // And a guard sequence is made of 1 or more expressions.
         loop {
             let e = recurse_any_expr(&boolean_type(), rng, module, ctx, env, &mut size);
             guard_exprs.push(e);
-            if size >= ctx.allowed_size || rng.gen::<bool>() {
+            if size >= ctx.allowed_size || rng.random::<bool>() {
                 break;
             }
         }
@@ -1911,15 +1914,15 @@ fn gen_type_specifier<RngType: rand::Rng>(
     } else {
         None
     };
-    let endianness = if rng.gen::<bool>() {
+    let endianness = if rng.random::<bool>() {
         [Endianness::Big, Endianness::Little, Endianness::Native]
             .into_iter()
             .choose(rng)
     } else {
         None
     };
-    let unit = if size_expr.is_some() && rng.gen::<bool>() {
-        Some(rng.gen::<u8>())
+    let unit = if size_expr.is_some() && rng.random::<bool>() {
+        Some(rng.random::<u8>())
     } else {
         None
     };
